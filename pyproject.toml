@@ -1,0 +1,11 @@
+[project]
+name = "Farrenzos Garbage"
+description = "Farrenzo's custom nodes for tagging and other utilities."
+version = "1.0.0"
+license = { file = "LICENSE" }
+keywords = ["advanced sampler", "Advanced CLIP Text Encode", "Image Scaler"]
+
+[tool.comfy]
+PublisherId = "farrenzo"
+DisplayName = "Farrenzo's Garbage"
+Icon = ""

@@ -1,0 +1,270 @@
+{
+	"FG_DynamicLoraLoader":{
+		"display_name": "🗑️ Multi-LoRA Loader",
+		"description": "Dynamic LoRA stacker with optional CLIP entry.\n - Can be used with SDXL models. (CLIP required)\n - FLUX models. (CLIP optional)",
+		"inputs": {
+			"model": {
+				"name": "🤖 Model",
+				"tooltip": "🤖 Model - Diffusion Model input used for generation"
+			},
+			"clip": {
+				"name": "📒 Clip",
+				"tooltip": "📒 Clip: used for text encoding and conditional generation. This is optional."
+			}
+		},
+		"outputs": {
+			"0": {
+				"name": "🤖 Model",
+				"tooltip": "🤖 Model - Diffusion Model input used for generation"
+			},
+			"1": {
+				"name": "📒 Clip",
+				"tooltip": "📒 Clip: used for text encoding and conditional generation. This is optional."
+			}
+		}
+	},
+	"FG_CLIPTextEncode":{
+		"display_name": "🗑️ Enhanced CLIP Text Encode",
+		"description": "Enhanced CLIP Text Encoder. Encodes text prompts using a CLIP model into an embedding that can be used to guide the diffusion model towards generating specific images.\n\nMany SDXL models will use a negative prompt. However, newer models appear to have better (not perfect) prompt adherence. Hence a negative prompt is not always required.",
+		"inputs": {
+			"clip": {
+				"name": "📒 Clip",
+				"tooltip": "📒 Clip: The CLIP model used for encoding the text."
+			},
+			"positive_prompt": {
+				"name": "➕ Positive Prompt",
+				"tooltip": "✅ You want to see."
+			},
+			"prompt_option": {
+				"name": "🗒️ Prompt Zero Out",
+				"tooltip": "🗒️ Switch this to override the negative prompt; zeroing out it's weight."
+			},
+			"negative_prompt": {
+				"name": "➖ Negative Prompt",
+				"tooltip": "❌ You DON'T want to see."
+			},
+			"vae" :{
+				"name": "🔣 VAE",
+				"tooltip": "🔣 VAE: Used to encode the reference images into latent pixels that the model understands."
+			},
+			"image1" :{
+				"name": "🖼️ Picture 1",
+				"tooltip": "🖼️ Picture 1 — Reference Image 1, used for conditional generation and latent space encoding."
+			},
+			"image2" :{
+				"name": "🖼️ Picture 2",
+				"tooltip": "🖼️ Picture 2 — Reference Image 2, used for conditional generation and latent space encoding."
+			},
+			"image3" :{
+				"name": "🖼️ Picture 3",
+				"tooltip": "🖼️ Picture 3 — Reference Image 3, used for conditional generation and latent space encoding."
+			},
+			"vl_based_clip" :{
+				"name": "📃 Show VL Textbox",
+				"tooltip": "📃 Toggle to show the Visual Learning textbox.. this does not disable it, just hides it."
+			},
+			"vl_instruction" :{
+				"name": "✏️ Visual Learning Instructions",
+				"tooltip": "✏️ System instructions used to guide the editing of reference images."
+			}
+		},
+		"outputs": {
+			"0": {
+				"name": "➕ Positive Conditioning",
+				"tooltip": "Attach this to the + side of the KSampler"
+			},
+			"1": {
+				"name": "➖ Negative Conditioning",
+				"tooltip": "Attach this to the - side of the KSampler"
+			}
+		}
+	},
+	"FG_ModelReferenceLatentMethod":{
+		"display_name":"🗑️ Edit Model Reference Method",
+		"description":"This node controls how reference images are injected into the FLUX Kontext diffusion process. This is best used if reference images are passed with a VAE, that way, the VAE-encoded images get attached to the conditioning as reference_latents. This node tells the model how to use them during generation.",
+		"inputs":{
+			"positive_conditioning": {
+				"name":"Positive Conditioning",
+				"tooltip": "➕ Positive prompt conditioning info from CLIP."
+			},
+			"negative_conditioning": {
+				"name":"Negative conditioning",
+				"tooltip": "➖ Negative prompt conditioning info from CLIP."
+			},
+			"positive_reference_latent_method": {
+				"name":"+ latent method option",
+				"tooltip": "The method the model will use to interpret the positive image latents."
+			},
+			"negative_reference_latent_method": {
+				"name":"- latent method option",
+				"tooltip": "The method the model will use to interpret the negative image latents."
+			}
+		},
+		"outputs": {
+			"0":{
+				"name":"➕ Positive Conditioning",
+				"tooltip": "Connect to + of KSampler"
+			},
+			"1":{
+				"name":"➖ Negative Conditioning",
+				"tooltip": "Connect to + of KSampler"
+			}
+		}
+	},
+	"FG_ImageScaler":{
+		"display_name":"🗑️ Image Scaler",
+		"description":"Scale an image to a predetermined multiple. Among other things.",
+		"inputs":{
+			"image":{
+				"name":"🖼️ Image",
+				"tooltip": "The Image to process."
+			},
+			"mask":{
+				"name":"👺 Mask",
+				"tooltip":"(Optional) The Image to process."
+			},
+			"vae":{
+				"name":"🔣 VAE",
+				"tooltip":"(Optional) Variational AutoEncoder: Used for encoding the image and mask into a latent."
+			},
+			"grow_mask_by":{
+				"name":"Mask Growth Value",
+				"tooltip":""
+			},
+			"fit":{
+				"name":"↕️ Fit",
+				"tooltip":"How to scale the image."
+			},
+			"rounding":{
+				"name":"🔄 Rounding",
+				"tooltip":"Round up or down"
+			},
+			"scaling_method":{
+				"name":"🔀 Scaling Method",
+				"tooltip":"Choose your best method."
+			},
+			"round_to_multiple":{
+				"name":"Ⓜ️ Rounding Multiple",
+				"tooltip":"What to base your scaled image dimesnions on."
+			},
+			"desired_width":{
+				"name":"📐 Desired Width",
+				"tooltip":"Enter if you want to keep exact dimensions."
+			},
+			"desired_height":{
+				"name":"📏 Height",
+				"tooltip":"Enter if you want to keep exact dimensions."
+			},
+			"background_color":{
+				"name":"🎨 Background Color",
+				"tooltip":"For scaling, the background ... "
+			},
+			"base_model":{
+				"name":"🧮 Base Model",
+				"tooltip":"Default is SDXL but for an empty latent, you need to pick FLUX for FLUX models as they produce 16 channel empty latents."
+			}
+		},
+		"outputs":{
+			"0":{
+				"name":"🖼️ Image",
+				"tooltip": "The processed image."
+			},
+			"1":{
+				"name":"👺 Mask",
+				"tooltip": "The scaled mask."
+			},
+			"2":{
+				"name":"🏞️ Latent",
+				"tooltip": "Empty latent if no VAE is provided. Encoded latent image if VAE is provided. Encoded inpaint latent image if both VAE and Mask is provided."
+			},
+			"3":{
+				"name":"📐 Width",
+				"tooltip": "The width of the output image."
+			},
+			"4":{
+				"name":"📏 Height",
+				"tooltip": "The height of the output image."
+			}
+		}
+	},
+	"FG_Advanced_KSampler":{
+		"display_name":"🗑️ Advanced KSampler",
+		"description":"Integrated KSampler for SDXL + FLUX models. Supports:\n - Optimized AuraFlow shift\n - Optimized CFG normalization adjustment",
+		"inputs":{
+			"model":{
+				"name": "🤖 Model",
+				"tooltip": "🤖 Model - Diffusion model input used as the core model for image generation"
+			},
+        	"positive":{
+				"name": "➕ Positive Conditioning",
+				"tooltip": "Positive condititioning info."
+			},
+        	"negative":{
+				"name": "➖ Negative Conditioning",
+				"tooltip": "Negative condititioning info."
+			},
+        	"latent_image":{
+				"name":"🏞️ Latent input.",
+				"tooltip":"🏞️ Either an empty latent or encoded pixels from a VAE"
+			},
+			"compute_sigmas":{
+				"name":"🗿 Sigma",
+				"tooltip":"🗿 Typically done internally, however, for more control, turn on. Use with ip adapters or controlnet. No need to compute sigmas with empty latent images."
+			},
+        	"add_noise":{
+				"name":"✨ Add Noise",
+				"tooltip":"Enabled by default to always add noise to the latent image. Disable if you do not want to denoise further."
+			},
+        	"noise_seed":{
+				"name":"🎲 Seed",
+				"tooltip":"🎲 The random seed for generating noise."
+			},
+        	"steps":{
+				"name":"📊 Steps",
+				"tooltip":"📊 Noise reduction steps."
+			},
+        	"cfg":{
+				"name":"🎛️ Classifier Free Guidance",
+				"tooltip":"🎛️ Used to balance randomness and prompt adherence. Increasing this value makes the results align more closely with the prompt, but setting it too high may lead to a decline in image quality."
+			},
+        	"sampler_name":{
+				"name":"🌀 Sampler",
+				"tooltip":"🌀 Sampling algorithms influence result quality, generation speed, and stylistic characteristics."
+			},
+        	"scheduler":{
+				"name":"📈 Scheduler",
+				"tooltip":"📈 A method for controlling the gradual removal of noise."
+			},
+        	"start_at_step":{
+				"name":"🚩 Starting Step",
+				"tooltip":"Percantage at which to begin denoising"
+			},
+        	"end_at_step":{
+				"name":"🏁 Finishing Step",
+				"tooltip":"Percantage at which to finish denoising"
+			},
+        	"denoise":{
+				"name": "🔄 Denoise",
+				"tooltip": "🔄 The percantage of noise to be removed."
+			},
+        	"auraflow_shift":{
+				"name": "⚡ Model Sampling Aura Flow Shift",
+				"tooltip": "⚡ AuraFlow model sampling shift parameter affecting speed and quality (0-100). Leave at Zero to skip applying."
+			},
+        	"cfg_norm_strength":{
+				"name": "⚖️ CFGNorm Strength",
+				"tooltip": "⚖️ CFG Normalization strength, dynamically adjusts CFG guidance strength (0-100). Leave at Zero to skip applying"
+			},
+        	"return_with_leftover_noise":{
+				"name":"Return w/leftover noise ➜",
+				"tooltip":"Turn on if you intend to daisy chain samplers."
+			}
+		},
+		"outputs": {
+			"0": {
+				"name": "🏞️ Latent",
+				"tooltip": "🏞️ Latent - Generated latent space output."
+			}
+		}
+	}
+}
