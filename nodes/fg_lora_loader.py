@@ -15,7 +15,6 @@ import comfy.sd
 import comfy.utils
 import folder_paths
 from ._fg_helperfunctions import log
-from .. import LORA_INDEX
 
 global_description = """
 Dynamic LoRA stacker with optional CLIP entry.
