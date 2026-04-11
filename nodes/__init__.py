@@ -1,5 +1,5 @@
 from ._fg_helperfunctions    import log
-from .coordinates_box_fill   import CoordinatesBoxFill
+from .fg_coordinates_box_fill   import CoordinatesBoxFill
 from .fg_advanced_ksampler   import FG_Advanced_KSampler
 from .fg_CLIP_text_encode    import FG_CLIPTextEncode
 from .fg_controlnet          import FG_ApplyControlNet

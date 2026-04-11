@@ -11,12 +11,13 @@ import numpy as np
 from typing import List
 from PIL import Image, ImageDraw, ImageFont
 import comfy.model_management
+from server import PromptServer
 
 MODEL_TYPES = {
-    "SDXL":4,
-    "Qwen":4,
-    "Flux":16,
-    "ZImage":16
+    "SDXL":   {"channels": 4,   "spatial_div": 8},
+    "Qwen":   {"channels": 4,   "spatial_div": 8},
+    "Flux":   {"channels": 128, "spatial_div": 16},
+    "ZImage": {"channels": 128, "spatial_div": 16},
 }
 
 SCALING_METHODS = {
@@ -80,6 +81,7 @@ def log(message:str, message_type:str="info") -> None:
         print(f"{message_types[message_type]} [🗑️ Garbãƶe] -> {message}\033[m")
     return
 
+
 def generate_latent_image_data(
     width,
     height,
@@ -92,11 +94,18 @@ def generate_latent_image_data(
     device = comfy.model_management.intermediate_device()
 ):
     """Return a latent"""
+    model_info = MODEL_TYPES[model_type]
     if vae is None:
         latent = {
-            "samples":torch.zeros(
-                [batch_size, MODEL_TYPES[model_type], height // 8, width // 8],
-                device=device
+            "samples": torch.zeros(
+                [
+                    batch_size,
+                    model_info["channels"],
+                    height // model_info["spatial_div"],
+                    width  // model_info["spatial_div"]
+                ],
+                device=device,
+                dtype=comfy.model_management.intermediate_dtype()
             )
         }
         latent_info = "empty"
@@ -169,14 +178,20 @@ def unpack_masks(masks: list):
 def clear_memory(purge_cache: bool = False, purge_models: bool = False):
     if purge_cache:
         import gc
-        # Cleanup
         gc.collect()
         if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
+            for i in range(torch.cuda.device_count()):
+                device = torch.device(f"cuda:{i}")
+                comfy.model_management.free_memory(
+                    comfy.model_management.get_total_memory(device) * 0.8,
+                    device
+                )
+                with torch.cuda.device(i):
+                    torch.cuda.synchronize()
+                    torch.cuda.empty_cache()
+                    torch.cuda.ipc_collect()
     if purge_models:
         comfy.model_management.unload_all_models()
-        comfy.model_management.soft_empty_cache()
     log(f"👝 Memory purged.")
 
 def tensor2pil(t_image: torch.Tensor)  -> Image:
