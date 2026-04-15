@@ -202,6 +202,6 @@ class FG_EmptyLatent:
                     break
 
         # Generate the latent
-        latent_info, latent = generate_latent_image_data(width=width, height=height, batch_size = batch_size, model_type="SDXL")
+        latent_info, latent = generate_latent_image_data(width=width, height=height, batch_size = batch_size, model_type=model_type)
         log(f"{self.NODE_NAME}: Generated an {latent_info} latent of {width}*{height}")
         return (latent, width, height, )
