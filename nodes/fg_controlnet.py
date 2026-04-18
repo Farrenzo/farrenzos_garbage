@@ -72,11 +72,8 @@ class FG_ApplyControlNet:
         if vae is None:
             latent_info, latent = generate_latent_image_data(width=image_width, height=image_height, model_type=base_model)
             log(f"{self.NODE_NAME}: No VAE to decode image. Generated an {latent_info} latent of {image_width}*{image_height}")
-        elif vae:
-            if not mask:
-                latent_info, latent = generate_latent_image_data(width=image_width, height=image_height, vae = vae, image = image)
-                log(f"{self.NODE_NAME}: Found VAE, but no mask, only encoding image into latent.")
-            if mask and len(mask) > 0:
+        elif vae is not None:
+            if mask is not None and len(mask) > 0:
                 latent_info, latent = generate_latent_image_data(
                     width           = image_width,
                     height          = image_height,
@@ -87,6 +84,9 @@ class FG_ApplyControlNet:
                     mask_growth_val = grow_mask_by
                 )
                 log(f"{self.NODE_NAME}: Found mask and VAE, encoding latent for inpainting.")
+            if mask is None:
+                latent_info, latent = generate_latent_image_data(width=image_width, height=image_height, vae = vae, image = image)
+                log(f"{self.NODE_NAME}: Found VAE, but no mask, only encoding image into latent.")
 
         control_hint = image.movedim(-1,1)
         cnets = {}

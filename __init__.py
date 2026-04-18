@@ -63,10 +63,28 @@ TELEGRAM_CHAT_ID = NODE_SETTINGS["TELEGRAM_CHAT_ID"]
 TELEGRAM_PRIVATE_API = NODE_SETTINGS["TELEGRAM_PRIVATE_API"]
 WD_14_INFO = NODE_SETTINGS["WD_14_TAGGER"]
 
-LORA_INDEX = set_up_lora_index()
+
+# LoRRA Loader section.
+_lora_cache = None
+_lora_mtime = 0
+
+def _get_lora_index_path():
+    return folder_paths.get_full_path("loras", "fg_dynamic_lora_loader.json")
+
+# Still run at startup to create the file if missing
+set_up_lora_index()
+
 @PromptServer.instance.routes.get("/fg/lora_index")
 async def get_lora_index(request):
-    return web.json_response(LORA_INDEX)
+    global _lora_cache, _lora_mtime
+    index_path = _get_lora_index_path()
+    if index_path:
+        current_mtime = os.path.getmtime(index_path)
+        if _lora_cache is None or current_mtime != _lora_mtime:
+            with open(index_path, "r") as f:
+                _lora_cache = json.load(f)
+            _lora_mtime = current_mtime
+    return web.json_response(_lora_cache or {})
 
 # Instantiate
 from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS, log
