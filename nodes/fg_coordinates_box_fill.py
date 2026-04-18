@@ -8,7 +8,7 @@ and outputs the modified image and a mask of the affected area.
 │ ○ images                  IMAGE  ○  │
 │                           MASK   ○  │
 │                                     │
-│  mode         [fill|erase]          │
+│  mode          [fill|erase]         │
 │  x_coordinate  [0      ]            │
 │  y_coordinate  [0      ]            │
 │  width         [625    ]            │
