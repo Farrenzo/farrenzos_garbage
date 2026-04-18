@@ -1,6 +1,6 @@
 """
 ┌─────────────────────────────────────┐
-│      Aspect Ratio Latent Image      │
+│          Multi LoRA Loader          │
 ├─────────────────────────────────────┤
 │ ○ Model                    Model  ○ │
 │ ○ Clip                      Clip  ○ │
