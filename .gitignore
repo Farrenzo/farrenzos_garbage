@@ -205,11 +205,12 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
-*/_test_models/*
+_test_models/
+_test_models/*
 */__pycache__
 __pycache__/
 /models/wd-eva02-large-tagger-v3.onnx
 _env.json
 notes.txt
 fun_colors.py
-
+*.onnx
