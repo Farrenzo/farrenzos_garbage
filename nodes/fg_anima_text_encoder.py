@@ -1541,7 +1541,7 @@ class LoadQwen35AnimaCLIP:
 
     RETURN_TYPES = ("CLIP",)
     FUNCTION = "load_clip"
-    CATEGORY = "loaders/Anima"
+    CATEGORY = "Farrenzo's Garbage/Loaders"
     TITLE = "Load Qwen3.5 CLIP (Anima)"
 
     def load_clip(self, clip_name, use_calibration=True, use_alignment=False, alignment_strength=1.0, output_scale=1.0):
@@ -1648,7 +1648,7 @@ class LoadQwen35ViT:
     RETURN_TYPES = ("QWEN35_VIT",)
     RETURN_NAMES = ("vit",)
     FUNCTION = "load_vit"
-    CATEGORY = "loaders/Anima"
+    CATEGORY = "Farrenzo's Garbage/Loaders"
     TITLE = "Load Qwen3.5 ViT (Anima)"
 
     def load_vit(self, vit_name):
@@ -1747,7 +1747,7 @@ class Qwen35VisionEncode:
 
     RETURN_TYPES = ("CONDITIONING",)
     FUNCTION = "encode"
-    CATEGORY = "conditioning/Anima"
+    CATEGORY = "Farrenzo's Garbage/Conditioning"
     TITLE = "Qwen3.5 Vision Encode (Anima)"
 
     def encode(self, clip, vit, image, text, mode="add", image_size=448, vision_weight=0.3):
