@@ -166,7 +166,7 @@ class WD14Tagger:
         prompt_builder_results = {}
         for cat in set(categories):
             if exclude_rating_tags:
-                if cat == "0_general":
+                if cat == "01_META":
                     continue
             prompt_builder_results[cat] = [
                 (
