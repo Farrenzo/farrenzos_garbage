@@ -90,7 +90,7 @@ class OllamaSaveContext:
     FUNCTION = "ollama_save_context"
 
     OUTPUT_NODE = True
-    CATEGORY = "Ollama"
+    CATEGORY = "Farrenzo's Garbage/Ollama"
 
     def ollama_save_context(self, filename, context=None):
         path = self._base_dir + os.path.sep + filename
@@ -117,7 +117,7 @@ class OllamaLoadContext:
                     {"context_file": (files, {})},
                 }
 
-    CATEGORY = "Ollama"
+    CATEGORY = "Farrenzo's Garbage/Ollama"
 
     RETURN_NAMES = ("context",)
     RETURN_TYPES = ("STRING",)
@@ -188,7 +188,7 @@ class OllamaOptionsV2:
     RETURN_TYPES = ("OLLAMA_OPTIONS",)
     RETURN_NAMES = ("options",)
     FUNCTION = "ollama_options"
-    CATEGORY = "Ollama"
+    CATEGORY = "Farrenzo's Garbage/Ollama"
     DESCRIPTION = "Various settings for advanced configuration of Ollama inference. See Ollama documentation for more details."
 
     def ollama_options(self, **kargs):
@@ -222,7 +222,7 @@ class OllamaConnectivityV2:
     RETURN_TYPES = ("OLLAMA_CONNECTIVITY",)
     RETURN_NAMES = ("connection",)
     FUNCTION = "ollama_connectivity"
-    CATEGORY = "Ollama"
+    CATEGORY = "Farrenzo's Garbage/Ollama"
     DESCRIPTION = "Provides connection to an Ollama server. Use the refresh button to load the model list in case of connection error or after installing a new model."
 
     def ollama_connectivity(self, url, model, keep_alive, keep_alive_unit):
@@ -271,7 +271,7 @@ class OllamaGenerateV2:
     RETURN_TYPES = ("STRING", "STRING", "OLLAMA_CONTEXT", "OLLAMA_META",)
     RETURN_NAMES = ("result", "thinking", "context", "meta",)
     FUNCTION = "ollama_generate_v2"
-    CATEGORY = "Ollama"
+    CATEGORY = "Farrenzo's Garbage/Ollama"
     DESCRIPTION = "Text generation with Ollama. Supports vision tasks, multi-turn conversations, and advanced inference options. Connect an Ollama Connectivity node to set the server URL and model."
 
     def get_request_options(self, options):
@@ -488,7 +488,7 @@ class OllamaChat:
         "history",
     )
     FUNCTION = "ollama_chat"
-    CATEGORY = "Ollama"
+    CATEGORY = "Farrenzo's Garbage/Ollama"
     DESCRIPTION = "Text generation with Ollama Chat. Supports vision tasks, multi-turn conversations, and advanced inference options. Connect an Ollama Connectivity node to set the server URL and model."
 
     def ollama_chat(

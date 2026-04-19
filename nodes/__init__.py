@@ -27,12 +27,6 @@ from .fg_ollama import (
     OllamaChat,
 )
 
-from fg_anima_text_encoder import (
-    LoadQwen35AnimaCLIP,
-    LoadQwen35ViT,
-    Qwen35VisionEncode,
-)
-
 NODE_CLASS_MAPPINGS = {
     "FG_Advanced_KSampler"           : FG_Advanced_KSampler,
     "FG_ApplyControlNet"             : FG_ApplyControlNet,
@@ -60,12 +54,6 @@ NODE_CLASS_MAPPINGS = {
     "OllamaSaveContext"   : OllamaSaveContext,
     "OllamaLoadContext"   : OllamaLoadContext,
     "OllamaChat"          : OllamaChat,
-
-
-    "LoadQwen35AnimaCLIP": LoadQwen35AnimaCLIP,
-    "LoadQwen35ViT"      : LoadQwen35ViT,
-    "Qwen35VisionEncode" : Qwen35VisionEncode,
-
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -97,9 +85,4 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "OllamaSaveContext"              : "Ollama Save Context",
     "OllamaLoadContext"              : "Ollama Load Context",
     "OllamaChat"                     : "Ollama Chat",
-
-
-    "LoadQwen35AnimaCLIP" : "Load Qwen3.5 CLIP (Anima)",
-    "LoadQwen35ViT"       : "Load Qwen3.5 ViT (Anima)",
-    "Qwen35VisionEncode"  : "Qwen3.5 Vision Encode (Anima)",
 }
