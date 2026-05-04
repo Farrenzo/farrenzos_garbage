@@ -8,6 +8,7 @@ Returns the Loads an image, outputs the image, image mask, width & height.
 │ ○ int_2                             |
 │                                     │
 │ <SWITCH mode default TRUE>          │
+│ <INT Multiplier>                    │
 └─────────────────────────────────────┘
 
 """
@@ -21,8 +22,11 @@ class MinimumMaximum:
         return {
             "required": {
                 "mode": ("BOOLEAN", {"default": True, "label_on": "max", "label_off": "min"}),
-                "int_1": ("INT",),
-                "int_2": ("INT",),
+                "int_1": ("INT", {"default": 0, "forceInput": True}),
+                "int_2": ("INT", {"default": 0, "forceInput": True}),
+            },
+            "optional": {
+                "multiplier": ("INT", {"tooltip": "Multiply the output by a given value."}),
             },
         }
 
@@ -31,9 +35,9 @@ class MinimumMaximum:
     RETURN_TYPES = ("INT", )
     RETURN_NAMES = ("Integer", )
 
-    def get_min_or_max(self, mode, int_1, int_2):
+    def get_min_or_max(self, mode, int_1, int_2, int_3=1):
         if mode:
-            return (max(int_1, int_2),)
+            return (1*max(int_1, int_2),)
         else:
-            return (min(int_1, int_2),)
+            return (1*min(int_1, int_2),)
 
