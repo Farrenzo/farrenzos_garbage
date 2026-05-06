@@ -945,7 +945,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 396680,personification,09_CLOTHING,0,29571,944,1
 1636487,one-hour_drawing_challenge,03_ENVIROMENT,0,29539,945,1
 1631677,mature_male,09_CLOTHING,0,29491,946,1
-497007,backlighting,09_CLOTHING,0,29462,947,1
+497007,backlighting,02_COMPOSITION,0,29462,947,1
 4596,halloween,09_CLOTHING,0,29425,948,1
 2065694,vertical-striped_clothes,10_PROPS,0,29407,949,1
 168390,bulge,11_PROMPT,0,29402,950,1
@@ -1241,7 +1241,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 1262298,off-shoulder_dress,09_CLOTHING,0,20543,1240,1
 469042,2koma,02_COMPOSITION,0,20542,1241,1
 1681089,furry_male,04_PEOPLE,0,20533,1242,1
-464544,can,07_EXPRESSIONS,0,20502,1243,2
+464544,can,10_PROPS,0,20502,1243,1
 433182,!?,07_EXPRESSIONS,0,20336,1244,1
 15224,sand,03_ENVIROMENT,0,20328,1245,2
 549355,arms_at_sides,06_POSE,0,20324,1246,2
@@ -1456,7 +1456,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 1764,guitar,10_PROPS,0,16508,1455,2
 448621,arm_warmers,06_POSE,0,16473,1456,2
 4974,gangbang,11_PROMPT,0,16470,1457,2
-4308,pen,11_PROMPT,0,16401,1458,2
+4308,pen,10_PROPS,0,16401,1458,2
 693118,absurdly_long_hair,08_ANATOMY,0,16388,1459,1
 381163,petticoat,03_ENVIROMENT,0,16366,1460,2
 662424,frog_hair_ornament,08_ANATOMY,0,16351,1461,2
@@ -3715,7 +3715,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 695265,clitoral_stimulation,11_PROMPT,0,3287,3714,2
 448292,porkpie_hat,10_PROPS,0,3283,3715,2
 380173,seashell,10_PROPS,0,3280,3716,2
-379595,breast_slip,09_CLOTHING,0,3274,3717,2
+379595,breast_slip,11_PROMPT,0,3274,3717,1
 1397450,plantar_flexion,06_POSE,0,3274,3718,2
 633092,arm_held_back,06_POSE,0,3272,3719,1
 552818,parted_hair,08_ANATOMY,0,3271,3720,2
@@ -4385,7 +4385,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 501554,sweater_around_waist,11_PROMPT,0,2438,4384,1
 1383226,ofuda_on_clothes,09_CLOTHING,0,2438,4385,2
 1378575,monsterification,05_CHARACTER,0,2437,4386,2
-1282702,wooden_bucket,03_ENVIROMENT,0,2435,4387,2
+1282702,wooden_bucket,10_PROPS,0,2435,4387,1
 466439,sparks,11_PROMPT,0,2434,4388,2
 570969,red_armor,09_CLOTHING,0,2432,4389,2
 617893,sleeping_on_person,11_PROMPT,0,2432,4390,2
