@@ -191,14 +191,14 @@ class OllamaOptionsV2:
     CATEGORY = "Farrenzo's Garbage/Ollama"
     DESCRIPTION = "Various settings for advanced configuration of Ollama inference. See Ollama documentation for more details."
 
-    def ollama_options(self, **kargs):
+    def ollama_options(self, **kwargs):
 
-        if kargs['debug']:
+        if kwargs['debug']:
             print("--- ollama options v2 dump\n")
-            pprint(kargs)
+            pprint(kwargs)
             print("---------------------------------------------------------")
 
-        return (kargs,)
+        return (kwargs,)
 
 class OllamaConnectivityV2:
     def __init__(self):

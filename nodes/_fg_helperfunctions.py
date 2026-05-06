@@ -17,7 +17,7 @@ MODEL_TYPES = {
     "SDXL":   {"channels": 4,   "spatial_div": 8},
     "Qwen":   {"channels": 4,   "spatial_div": 8},
     "Flux":   {"channels": 128, "spatial_div": 16},
-    "ZImage": {"channels": 128, "spatial_div": 16},
+    "ZImage": {"channels": 16,  "spatial_div": 8},
 }
 
 SCALING_METHODS = {
