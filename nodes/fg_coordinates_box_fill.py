@@ -22,7 +22,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 
-class CoordinatesBoxFill:
+class FG_CoordinatesBoxFill:
     
     def __init__(self):
         self.NODE_NAME = "Coordinate Box Fill"

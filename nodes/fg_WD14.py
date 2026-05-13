@@ -6,14 +6,13 @@ import os
 import torch
 import numpy as np
 from PIL import Image
-from ._fg_helperfunctions import log
 
+from ._fg_helperfunctions import log
 from .. import WD_14_INFO
-WD14_MODEL_PATH = os.path.join(os.path.dirname(__file__), f"..\\models\\{WD_14_INFO['directory']}")
 
 # Lazy imports to avoid loading everything at startup
+pd  = None
 ort = None
-pd = None
 
 def get_onnx():
     global ort
@@ -39,7 +38,7 @@ SHA256: 9e768793060c7939b277ccb382783e8670e8a042d29d77aa736be0c8cc898bfc
 Place it in: custom_nodes/farrenzos_garbage/models/wd14_v3/THE_MODEL_YOU_DOWNLOADED
 Restart comfy & Voila.
 """
-class WD14Tagger:
+class FG_WD14Tagger:
     """
     Booru-style image tagger using WD14 v3 models.
     Outputs comma-separated tags suitable for anime/illustration prompts.
@@ -89,8 +88,8 @@ class WD14Tagger:
             pd = get_pandas()
             
             config = self.TAGGERS[model_key]
-            model_path = os.path.join(WD14_MODEL_PATH, config["model"])
-            csv_path = os.path.join(WD14_MODEL_PATH, config["csv"])
+            model_path = os.path.join(WD_14_INFO["model_path"], config["model"])
+            csv_path = os.path.join(WD_14_INFO["model_path"], config["csv"])
             
             if not os.path.exists(model_path):
                 log(f"Model not found: {model_path}", "error")

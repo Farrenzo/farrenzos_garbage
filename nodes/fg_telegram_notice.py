@@ -18,7 +18,7 @@ from datetime import datetime
 from ._fg_helperfunctions import log
 from .. import TELEGRAM_PRIVATE_API, TELEGRAM_CHAT_ID
 
-class SendTelegramNotification:
+class FG_SendTelegramNotification:
     def __init__(self):
         self.NODE_NAME = "Send Telegram Notification"
     

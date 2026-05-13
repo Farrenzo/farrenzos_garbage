@@ -1,7 +1,7 @@
 import json
 from ._fg_helperfunctions import log
 
-class ShowText:
+class FG_ShowText:
     """Displays text in the node after execution. Text persists across tab switches."""
     def __init__(self):
         self.NODE_NAME = "Show Text"

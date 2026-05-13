@@ -18,7 +18,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 403247,large_breasts,08_ANATOMY,0,1333379,17,1
 429,skirt,09_CLOTHING,0,1328225,18,1
 87788,blonde_hair,08_ANATOMY,0,1311581,19,1
-566835,multiple_girls,02_COMPOSITION,0,1309199,20,1
+566835,multiple_girls,04_PEOPLE,0,1309199,20,1
 16867,brown_hair,08_ANATOMY,0,1267072,21,1
 13200,black_hair,08_ANATOMY,0,1225953,22,1
 383159,long_sleeves,09_CLOTHING,0,1199349,23,1
@@ -105,7 +105,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 301022,lying,06_POSE,0,380092,104,1
 2785,horns,08_ANATOMY,0,374048,105,1
 6054,teeth,08_ANATOMY,0,370407,106,1
-568656,multiple_boys,02_COMPOSITION,0,367969,107,1
+568656,multiple_boys,04_PEOPLE,0,367969,107,1
 2866,wings,08_ANATOMY,0,366146,108,1
 1575,food,10_PROPS,0,362486,109,1
 384774,necktie,09_CLOTHING,0,360748,110,1
@@ -546,7 +546,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 547073,underwear_only,09_CLOTHING,0,59173,545,1
 9354,bdsm,11_PROMPT,0,58821,546,1
 655303,fox_girl,04_PEOPLE,0,58780,547,1
-464573,plant,11_PROMPT,0,58741,548,1
+464573,plant,10_PROPS,0,58741,548,1
 569748,black_background,02_COMPOSITION,0,58718,549,1
 498000,blue_ribbon,10_PROPS,0,58682,550,1
 507741,frilled_sleeves,09_CLOTHING,0,58385,551,1
@@ -912,11 +912,11 @@ tag_id,name,human_category,category,count,wd14index,ticks
 665184,ribbed_sweater,09_CLOTHING,0,31324,911,1
 1592077,topless_male,09_CLOTHING,0,31321,912,1
 379725,dual_persona,11_PROMPT,0,31318,913,1
-651957,clothed_female_nude_male,10_PROPS,0,31276,914,1
+651957,clothed_female_nude_male,11_PROMPT,0,31276,914,1
 545992,high_heel_boots,02_COMPOSITION,0,31226,915,1
 457726,track_jacket,09_CLOTHING,0,31226,916,1
 483919,single_earring,09_CLOTHING,0,31194,917,1
-397215,outline,10_PROPS,0,31130,918,1
+397215,outline,02_COMPOSITION,0,31130,918,1
 579793,frilled_apron,08_ANATOMY,0,30932,919,1
 494669,spot_color,04_PEOPLE,0,30882,920,1
 643274,partially_submerged,06_POSE,0,30880,921,1
@@ -1128,7 +1128,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 435262,stubble,08_ANATOMY,0,23410,1127,2
 4145,spear,10_PROPS,0,23393,1128,2
 462546,hand_between_legs,06_POSE,0,23353,1129,1
-8565,sarashi,05_CHARACTER,0,23319,1130,2
+8565,sarashi,09_CLOTHING,0,23319,1130,1
 544306,colored_eyelashes,08_ANATOMY,0,23255,1131,2
 648056,paw_pose,06_POSE,0,23249,1132,2
 399655,striped_bikini,09_CLOTHING,0,23215,1133,2
@@ -1256,7 +1256,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 1358345,pink_footwear,09_CLOTHING,0,20129,1255,2
 2074,vibrator,10_PROPS,0,20124,1256,2
 464582,strawberry,11_PROMPT,0,20086,1257,2
-488169,cleft_of_venus,03_ENVIROMENT,0,20080,1258,2
+488169,cleft_of_venus,08_ANATOMY,0,20080,1258,1
 681331,heart_hair_ornament,10_PROPS,0,20080,1259,1
 380423,goatee,11_PROMPT,0,20033,1260,2
 553797,sharp_fingernails,08_ANATOMY,0,19975,1261,2
@@ -1466,7 +1466,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 331704,bodystocking,11_PROMPT,0,16270,1465,2
 399930,highleg_swimsuit,09_CLOTHING,0,16269,1466,2
 603647,frilled_shirt,09_CLOTHING,0,16262,1467,2
-411783,potted_plant,03_ENVIROMENT,0,16260,1468,2
+411783,potted_plant,10_PROPS,0,16260,1468,2
 420,onsen,05_CHARACTER,0,16169,1469,2
 1635846,tracen_school_uniform,09_CLOTHING,0,16166,1470,2
 522051,on_head,06_POSE,0,16141,1471,2
@@ -1802,7 +1802,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 525747,lolita_hairband,10_PROPS,0,11741,1801,2
 9983,dancing,11_PROMPT,0,11740,1802,2
 2414,vampire,04_PEOPLE,0,11731,1803,2
-1468069,multiple_others,02_COMPOSITION,0,11683,1804,2
+1468069,multiple_others,04_PEOPLE,0,11683,1804,2
 469551,facepaint,11_PROMPT,0,11671,1805,2
 1450619,wide_shot,02_COMPOSITION,0,11630,1806,2
 11019,scared,11_PROMPT,0,11602,1807,2
@@ -2403,7 +2403,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 651956,clothed_male_nude_female,04_PEOPLE,0,7294,2402,1
 415942,jester_cap,10_PROPS,0,7288,2403,2
 614881,open_vest,09_CLOTHING,0,7283,2404,2
-695377,planted,03_ENVIROMENT,0,7267,2405,2
+695377,planted,11_PROMPT,0,7267,2405,1
 615970,yellow_sclera,08_ANATOMY,0,7267,2406,1
 493130,plaid_shirt,09_CLOTHING,0,7266,2407,2
 487850,tentacle_sex,11_PROMPT,0,7261,2408,2
@@ -4682,7 +4682,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 3532,ink,10_PROPS,0,2133,4681,2
 396795,menu,02_COMPOSITION,0,2132,4682,2
 1476489,pokemon_on_head,10_PROPS,0,2132,4683,2
-492105,groin_tendon,09_CLOTHING,0,2130,4684,2
+492105,groin_tendon,08_ANATOMY,0,2130,4684,1
 10293,marker,10_PROPS,0,2129,4685,2
 628220,claw_ring,10_PROPS,0,2129,4686,2
 443220,you're_doing_it_wrong,11_PROMPT,0,2126,4687,1
@@ -6813,7 +6813,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 587390,hand_on_headphones,06_POSE,0,965,6812,2
 1161750,boy_sandwich,04_PEOPLE,0,965,6813,2
 426382,bear_tail,08_ANATOMY,0,964,6814,2
-11268,stripper,10_PROPS,0,964,6815,2
+11268,stripper,04_PEOPLE,0,964,6815,1
 1260709,copy_ability,05_CHARACTER,0,964,6816,2
 1407027,jaguar_tail,08_ANATOMY,0,964,6817,2
 1496708,hitodama_print,11_PROMPT,0,963,6818,2
@@ -7203,7 +7203,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 382343,adjusting_panties,06_POSE,0,852,7202,1
 596238,bird_print,10_PROPS,0,851,7203,2
 1323325,shared_object_insertion,06_POSE,0,851,7204,2
-647761,hanging_plant,03_ENVIROMENT,0,851,7205,2
+647761,hanging_plant,10_PROPS,0,851,7205,2
 14936,bee,11_PROMPT,0,851,7206,2
 557830,hand_on_glass,06_POSE,0,851,7207,2
 565438,vertical-striped_socks,09_CLOTHING,0,850,7208,2
@@ -7677,7 +7677,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 1406789,otter_tail,10_PROPS,0,740,7676,2
 598911,interior,03_ENVIROMENT,0,739,7677,2
 608725,mami_mogu_mogu,05_CHARACTER,0,739,7678,2
-1396057,gumroad_username,07_EXPRESSIONS,0,739,7679,2
+1396057,gumroad_username,02_COMPOSITION,0,739,7679,2
 407968,lime_(fruit),11_PROMPT,0,738,7680,2
 1453283,amestris_military_uniform,09_CLOTHING,0,738,7681,1
 568063,cobblestone,03_ENVIROMENT,0,738,7682,2

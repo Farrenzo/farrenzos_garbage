@@ -13,7 +13,7 @@ Returns the Loads an image, outputs the image, image mask, width & height.
 
 """
 
-class MinimumMaximum:
+class FG_MinimumMaximum:
     def __init__(self):
         self.NODE_NAME = "Minimum + Maximum"
 

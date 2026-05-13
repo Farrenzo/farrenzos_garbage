@@ -12,7 +12,8 @@ from server import PromptServer
 # Paths
 current_path = os.path.dirname(__file__)
 env_path     = os.path.join(current_path, "_env.json")
-tompl_path   = os.path.join(current_path, "pyproject.toml")
+toml_path    = os.path.join(current_path, "pyproject.toml")
+
 
 initial_settings = {
     "TELEGRAM_CHAT_ID": None,
@@ -62,6 +63,8 @@ else:
 TELEGRAM_CHAT_ID = NODE_SETTINGS["TELEGRAM_CHAT_ID"]
 TELEGRAM_PRIVATE_API = NODE_SETTINGS["TELEGRAM_PRIVATE_API"]
 WD_14_INFO = NODE_SETTINGS["WD_14_TAGGER"]
+model_path = os.path.join(current_path, f"models/{WD_14_INFO['directory']}")
+WD_14_INFO["model_path"] = model_path
 
 
 # LoRRA Loader section.
@@ -88,7 +91,7 @@ async def get_lora_index(request):
 
 # Instantiate
 from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS, log
-with open(tompl_path, "r") as f:
+with open(toml_path, "r") as f:
     VERSION = toml.load(f)["project"]["version"]
 
 log(f"v{VERSION} has loaded {len(NODE_DISPLAY_NAME_MAPPINGS)} nodes.", "finish")
