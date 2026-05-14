@@ -3,6 +3,35 @@ const { app } = window.comfyAPI.app;
 
 let loraList = [];
 let loraIndex = {};
+let loraPreviewMap = {};   // { "lora_name01": "lora_name01.webp", ... }
+
+const MODEL_EXTS = [".safetensors", ".ckpt", ".pt", ".pth"];
+
+/**
+ * Derive the preview-image stem from a LoRA's full path.
+ * Mirrors the naming used by the extraction script:
+ *   "folder\\lora_name01.safetensors"  ->  "lora_name01"
+ */
+function stemFromLoraName(loraName) {
+    if (!loraName) return "";
+    const basename = loraName.replace(/\\/g, "/").split("/").pop();
+    const lower    = basename.toLowerCase();
+    for (const ext of MODEL_EXTS) {
+        if (lower.endsWith(ext)) return basename.slice(0, -ext.length);
+    }
+    return basename;
+}
+
+/**
+ * Returns a URL for the lora's preview image, or null if none exists
+ * in the .lora_previews folder.
+ */
+function getLoraPreviewUrl(loraName) {
+    const stem = stemFromLoraName(loraName);
+    if (!stem) return null;
+    const filename = loraPreviewMap[stem];
+    return filename ? `/fg/lora_preview/${encodeURIComponent(filename)}` : null;
+}
 
 async function fetchLoraList() {
     try {
@@ -29,8 +58,18 @@ async function fetchLoraIndex() {
     }
 }
 
+async function fetchLoraPreviewMap() {
+    try {
+        const resp = await api.fetchApi("/fg/lora_previews");
+        loraPreviewMap = await resp.json();
+    } catch (e) {
+        console.error("Failed to fetch LoRA preview map:", e);
+    }
+}
+
 fetchLoraList();
 fetchLoraIndex();
+fetchLoraPreviewMap();
 
 function getLoraInfo(loraName) {
     if (!loraName) return null;
@@ -227,15 +266,18 @@ app.registerExtension({
                     : "  No trigger words";
             }
 
-            const preview = info?.preview_image || "";
-            if (preview && preview.startsWith("data:image")) {
-                if (
-                    !this._previewImages[entry.index] ||
-                    this._previewImages[entry.index].src !== preview
-                ) {
+            const previewUrl = getLoraPreviewUrl(entry.loraWidget?.value);
+            if (previewUrl) {
+                const existing = this._previewImages[entry.index];
+                if (!existing || existing._fgSrc !== previewUrl) {
                     const img = new Image();
-                    img.onload = () => app.graph.setDirtyCanvas(true, true);
-                    img.src    = preview;
+                    img._fgSrc  = previewUrl;
+                    img.onload  = () => app.graph.setDirtyCanvas(true, true);
+                    img.onerror = () => {
+                        delete this._previewImages[entry.index];
+                        app.graph.setDirtyCanvas(true, true);
+                    };
+                    img.src = previewUrl;
                     this._previewImages[entry.index] = img;
                 }
             } else {
