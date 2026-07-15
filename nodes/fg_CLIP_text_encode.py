@@ -134,5 +134,5 @@ class FG_CLIPTextEncode(ComfyNodeABC):
         else:
             negative_conditioning = _advanced_encode(negative_prompt)
 
-        return (positive_conditioning, negative_conditioning, )
+        return (positive_conditioning, negative_conditioning, positive_prompt, negative_prompt)
 
