@@ -56,8 +56,8 @@ class FG_CLIPTextEncode(ComfyNodeABC):
             }
         }
 
-    RETURN_TYPES = ("CONDITIONING", "CONDITIONING")
-    RETURN_NAMES = ("Positive", "Negative")
+    RETURN_TYPES = ("CONDITIONING", "CONDITIONING", "STRING", "STRING")
+    RETURN_NAMES = ("Positive", "Negative", "Positive Text Prompt", "Negative Text Prompt")
     # "Conditioning that contains embedded text used to guide the diffusion model."
     OUTPUT_TOOLTIPS = ("Attach this to the + side of the KSampler", "Attach this to the - side of the KSampler",)
     FUNCTION = "encode"
@@ -134,5 +134,5 @@ class FG_CLIPTextEncode(ComfyNodeABC):
         else:
             negative_conditioning = _advanced_encode(negative_prompt)
 
-        return (positive_conditioning, negative_conditioning, positive_prompt, negative_prompt)
+        return (positive_conditioning, negative_conditioning, positive_prompt, negative_prompt, )
 

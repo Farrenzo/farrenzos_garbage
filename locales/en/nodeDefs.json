@@ -76,6 +76,14 @@
 			"1": {
 				"name": "➖ Negative Conditioning",
 				"tooltip": "Attach this to the - side of the KSampler"
+			},
+			"2": {
+				"name": "📃 Positive Text Prompt",
+				"tooltip": "Output the text for daisy chaining samples."
+			},
+			"3": {
+				"name": "📃 Negative Text Prompt",
+				"tooltip": "Output the text for daisy chaining samples."
 			}
 		}
 	},
