@@ -214,3 +214,4 @@ _env.json
 notes.txt
 fun_colors.py
 *.onnx
+.vscode
