@@ -62,6 +62,8 @@ class FG_SendTelegramNotification:
 
     def send_telegram_notification(self, message_text: str):
         """Sends a text message to a specified Telegram chat."""
+        print(TELEGRAM_PRIVATE_API)
+        print(TELEGRAM_CHAT_ID)
         if not TELEGRAM_PRIVATE_API or not TELEGRAM_CHAT_ID:
             log(f"{self.NODE_NAME}: Error sending notification. No credentials set up.")
             return

@@ -19,6 +19,15 @@ from .fg_telegram_notice      import FG_SendTelegramNotification
 from .fg_upscale_model        import FG_ModelImageScaler
 from .fg_WD14                 import FG_WD14Tagger
 
+from .fg_anima import AnimaConditioningRegion, ApplyAnimaRegionalConditioningPatch
+from .fg_anima_cnet import AnimaLLLiteApply
+from .fg_regional_prompt_nodes import (
+    MultiLatentComposite,
+    MultiAreaConditioning,
+    ConditioningUpscale,
+    ConditioningStretch,
+)
+
 NODE_CLASS_MAPPINGS = {
     "FG_Advanced_KSampler"           : FG_Advanced_KSampler,
     "FG_ApplyControlNet"             : FG_ApplyControlNet,
@@ -38,6 +47,16 @@ NODE_CLASS_MAPPINGS = {
     "FG_SendTelegramNotification"    : FG_SendTelegramNotification,
     "FG_ShowText"                    : FG_ShowText,
     "FG_WD14Tagger"                  : FG_WD14Tagger,
+
+    "AnimaConditioningRegion": AnimaConditioningRegion,
+    "ApplyAnimaRegionalConditioningPatch": ApplyAnimaRegionalConditioningPatch,
+
+    "MultiLatentComposite":  MultiLatentComposite,
+    "MultiAreaConditioning": MultiAreaConditioning,
+    "ConditioningUpscale":   ConditioningUpscale,
+    "ConditioningStretch":   ConditioningStretch,
+
+    "AnimaLLLiteApply": AnimaLLLiteApply,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -61,7 +80,18 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FG_SendTelegramNotification"    : "🗑️ Send Telegram Notification",
     "FG_ShowText"                    : "🗑️ Show Text",
     "FG_WD14Tagger"                  : "🗑️ WD14 Tagger (Booru Tags)",
+
+    "AnimaConditioningRegion":             "⚙️ Anima Conditioning Region",
+    "ApplyAnimaRegionalConditioningPatch": "⚙️ Apply Anima Regional Conditioning Patch",
+
+    "AnimaLLLiteApply": "⚙️ Apply Anima ControlNet-LLLite",
+
+    "MultiLatentComposite":  "⚙️ Multi Latent Composite",
+    "MultiAreaConditioning": "⚙️ Multi Area Conditioning",
+    "ConditioningUpscale":   "⚙️ Conditioning Upscale",
+    "ConditioningStretch":   "⚙️ Conditioning Stretch",
 }
+
 
 # Some required external libraries
 try:
@@ -85,12 +115,12 @@ try:
     }
     NODE_DISPLAY_NAME_MAPPINGS = {
         **NODE_DISPLAY_NAME_MAPPINGS,
-        "OllamaOptionsV2"                : "Ollama Options",
-        "OllamaConnectivityV2"           : "Ollama Connectivity",
-        "OllamaGenerateV2"               : "Ollama Generate",
-        "OllamaSaveContext"              : "Ollama Save Context",
-        "OllamaLoadContext"              : "Ollama Load Context",
-        "OllamaChat"                     : "Ollama Chat",
+        "OllamaOptionsV2"                : "⚙️ Ollama Options",
+        "OllamaConnectivityV2"           : "⚙️ Ollama Connectivity",
+        "OllamaGenerateV2"               : "⚙️ Ollama Generate",
+        "OllamaSaveContext"              : "⚙️ Ollama Save Context",
+        "OllamaLoadContext"              : "⚙️ Ollama Load Context",
+        "OllamaChat"                     : "⚙️ Ollama Chat",
     }
 except ImportError as e:
     log(

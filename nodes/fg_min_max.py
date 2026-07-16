@@ -35,9 +35,9 @@ class FG_MinimumMaximum:
     RETURN_TYPES = ("INT", )
     RETURN_NAMES = ("Integer", )
 
-    def get_min_or_max(self, mode, int_1, int_2, int_3=1):
+    def get_min_or_max(self, mode, int_1, int_2, multiplier=1):
         if mode:
-            return (1*max(int_1, int_2),)
+            return (multiplier*max(int_1, int_2),)
         else:
-            return (1*min(int_1, int_2),)
+            return (multiplier*min(int_1, int_2),)
 
