@@ -1,4 +1,5 @@
 from ._fg_helperfunctions import log
+from .fg_intelCode import _install_patch
 
 from .fg_advanced_ksampler    import FG_Advanced_KSampler
 from .fg_CLIP_text_encode     import FG_CLIPTextEncode
@@ -14,13 +15,23 @@ from .fg_min_max              import FG_MinimumMaximum
 from .fg_model_reference      import FG_ModelReferenceLatentMethod
 from .fg_purge_vram           import FG_PurgeMemory
 from .fg_save_image           import FG_SaveImage
+from .fg_save_video           import FG_SaveVideo
 from .fg_show_text            import FG_ShowText
 from .fg_telegram_notice      import FG_SendTelegramNotification
 from .fg_upscale_model        import FG_ModelImageScaler
 from .fg_WD14                 import FG_WD14Tagger
+from .fg_xpu_guard            import FG_XPUGuard
 
-from .fg_anima import AnimaConditioningRegion, ApplyAnimaRegionalConditioningPatch
-from .fg_anima_cnet import AnimaLLLiteApply
+from .fg_anima.anima_controlnet_nodes import AnimaLLLiteApply
+from .fg_anima.anima_regional_prompt_nodes import AnimaConditioningRegion, ApplyAnimaRegionalConditioningPatch
+from .fg_anima.anima_ipadapter_nodes import (
+    AnimaIPAdapterLoader,
+    AnimaIPAdapterApply,
+    AnimaSiglipeEncodeImage,
+    AnimaImageEmbLoader,
+)
+
+from .fg_krea2_rebalance import ConditioningKrea2Rebalance
 from .fg_regional_prompt_nodes import (
     MultiLatentComposite,
     MultiAreaConditioning,
@@ -44,19 +55,29 @@ NODE_CLASS_MAPPINGS = {
     "FG_ModelReferenceLatentMethod"  : FG_ModelReferenceLatentMethod,
     "FG_PurgeMemory"                 : FG_PurgeMemory,
     "FG_SaveImage"                   : FG_SaveImage,
+    "FG_SaveVideo"                   : FG_SaveVideo,
     "FG_SendTelegramNotification"    : FG_SendTelegramNotification,
     "FG_ShowText"                    : FG_ShowText,
     "FG_WD14Tagger"                  : FG_WD14Tagger,
+    "FG_XPUGuard"                    : FG_XPUGuard,
 
+    # Experimental Anima nodes
     "AnimaConditioningRegion": AnimaConditioningRegion,
     "ApplyAnimaRegionalConditioningPatch": ApplyAnimaRegionalConditioningPatch,
+    "AnimaLLLiteApply": AnimaLLLiteApply,
+
+    "AnimaIPAdapterLoader":    AnimaIPAdapterLoader,
+    "AnimaIPAdapterApply":     AnimaIPAdapterApply,
+    "AnimaSiglipeEncodeImage": AnimaSiglipeEncodeImage,
+    "AnimaImageEmbLoader":     AnimaImageEmbLoader,
 
     "MultiLatentComposite":  MultiLatentComposite,
     "MultiAreaConditioning": MultiAreaConditioning,
     "ConditioningUpscale":   ConditioningUpscale,
     "ConditioningStretch":   ConditioningStretch,
 
-    "AnimaLLLiteApply": AnimaLLLiteApply,
+    # Experimental Krea2 nodes
+    "ConditioningKrea2Rebalance": ConditioningKrea2Rebalance,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -77,53 +98,25 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FG_ModelReferenceLatentMethod"  : "🗑️ Edit Model Reference Method",
     "FG_PurgeMemory"                 : "🗑️ Purge Memory",
     "FG_SaveImage"                   : "🗑️ Save Image",
+    "FG_SaveVideo"                   : "🗑️ Save Video",
     "FG_SendTelegramNotification"    : "🗑️ Send Telegram Notification",
     "FG_ShowText"                    : "🗑️ Show Text",
     "FG_WD14Tagger"                  : "🗑️ WD14 Tagger (Booru Tags)",
 
+    "FG_XPUGuard"                    : "⚙️ XPU Guard (Device Health)",
     "AnimaConditioningRegion":             "⚙️ Anima Conditioning Region",
     "ApplyAnimaRegionalConditioningPatch": "⚙️ Apply Anima Regional Conditioning Patch",
-
     "AnimaLLLiteApply": "⚙️ Apply Anima ControlNet-LLLite",
+
+    "AnimaIPAdapterLoader"   : "⚙️ Anima IP-Adapter Loader",
+    "AnimaIPAdapterApply"    : "⚙️ Anima IP-Adapter Apply",
+    "AnimaSiglipeEncodeImage": "⚙️ Anima SigLIP2 Encode Image",
+    "AnimaImageEmbLoader"    : "⚙️ Anima Image Embedding Loader (Legacy)",
 
     "MultiLatentComposite":  "⚙️ Multi Latent Composite",
     "MultiAreaConditioning": "⚙️ Multi Area Conditioning",
     "ConditioningUpscale":   "⚙️ Conditioning Upscale",
     "ConditioningStretch":   "⚙️ Conditioning Stretch",
+
+    "ConditioningKrea2Rebalance": "🎛️ Krea 2 Conditioning Control",
 }
-
-
-# Some required external libraries
-try:
-    # Ollama
-    from .fg_ollama import (
-        OllamaOptionsV2,
-        OllamaConnectivityV2,
-        OllamaGenerateV2,
-        OllamaSaveContext,
-        OllamaLoadContext,
-        OllamaChat,
-    )
-    NODE_CLASS_MAPPINGS = {
-        **NODE_CLASS_MAPPINGS,
-        "OllamaOptionsV2"     : OllamaOptionsV2,
-        "OllamaConnectivityV2": OllamaConnectivityV2,
-        "OllamaGenerateV2"    : OllamaGenerateV2,
-        "OllamaSaveContext"   : OllamaSaveContext,
-        "OllamaLoadContext"   : OllamaLoadContext,
-        "OllamaChat"          : OllamaChat,
-    }
-    NODE_DISPLAY_NAME_MAPPINGS = {
-        **NODE_DISPLAY_NAME_MAPPINGS,
-        "OllamaOptionsV2"                : "⚙️ Ollama Options",
-        "OllamaConnectivityV2"           : "⚙️ Ollama Connectivity",
-        "OllamaGenerateV2"               : "⚙️ Ollama Generate",
-        "OllamaSaveContext"              : "⚙️ Ollama Save Context",
-        "OllamaLoadContext"              : "⚙️ Ollama Load Context",
-        "OllamaChat"                     : "⚙️ Ollama Chat",
-    }
-except ImportError as e:
-    log(
-        message=f"Unable to import Ollama, try installing it with PIP\nOllama nodes will be unavailable.\n{e}",
-        message_type="error"
-    )

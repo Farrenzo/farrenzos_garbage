@@ -1,5 +1,5 @@
 """
-Save Image (Clean) - ComfyUI Node
+Save Image - ComfyUI Node
 =================================
 Saves images with clean filenames and format options.
 
@@ -11,7 +11,7 @@ Features:
 - WebP options: lossless, quality, method
 
 ┌─────────────────────────────────────┐
-│ Save Image (Clean)                  │
+│ Save Image                          │
 ├─────────────────────────────────────┤
 │ ○  Images                           │
 │ <→ TEXT INPUT_File Name>            │
