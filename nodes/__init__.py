@@ -21,6 +21,7 @@ from .fg_telegram_notice      import FG_SendTelegramNotification
 from .fg_upscale_model        import FG_ModelImageScaler
 from .fg_WD14                 import FG_WD14Tagger
 from .fg_xpu_guard            import FG_XPUGuard
+from .fg_minimax_h3           import FG_MiniMaxH3_Conditioner
 
 from .fg_anima.anima_controlnet_nodes import AnimaLLLiteApply
 from .fg_anima.anima_regional_prompt_nodes import AnimaConditioningRegion, ApplyAnimaRegionalConditioningPatch
@@ -60,6 +61,7 @@ NODE_CLASS_MAPPINGS = {
     "FG_ShowText"                    : FG_ShowText,
     "FG_WD14Tagger"                  : FG_WD14Tagger,
     "FG_XPUGuard"                    : FG_XPUGuard,
+    "FG_MiniMaxH3_Conditioner"       : FG_MiniMaxH3_Conditioner,
 
     # Experimental Anima nodes
     "AnimaConditioningRegion": AnimaConditioningRegion,
@@ -102,6 +104,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FG_SendTelegramNotification"    : "🗑️ Send Telegram Notification",
     "FG_ShowText"                    : "🗑️ Show Text",
     "FG_WD14Tagger"                  : "🗑️ WD14 Tagger (Booru Tags)",
+    "FG_MiniMaxH3_Conditioner"       : "🗑️ MiniMax H3 Conditioner",
 
     "FG_XPUGuard"                    : "⚙️ XPU Guard (Device Health)",
     "AnimaConditioningRegion":             "⚙️ Anima Conditioning Region",
