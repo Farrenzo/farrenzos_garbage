@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import logging
-from typing import Callable
-
 import torch
+from typing import Callable
+from ._fg_helperfunctions import log
 import comfy.model_management as model_management
 
 
@@ -20,16 +19,6 @@ _last_backend: str | None = None
 _shown_warnings: set[str] = set()
 
 
-def _warn_once(key: str, message: str, *args: object) -> None:
-    """Show each fallback/error warning only once."""
-
-    if key in _shown_warnings:
-        return
-
-    _shown_warnings.add(key)
-    logging.warning("%s " + message, LOG_PREFIX, *args)
-
-
 def _set_backend(name: str) -> None:
     """Log only when the active telemetry backend changes."""
 
@@ -39,11 +28,7 @@ def _set_backend(name: str) -> None:
         return
 
     _last_backend = name
-    logging.warning(
-        "%s Active memory backend: %s",
-        LOG_PREFIX,
-        name,
-    )
+    log(f"{LOG_PREFIX} Active memory backend: {name}", "warning")
 
 
 def _get_mem_get_info_function() -> Callable:
@@ -231,15 +216,15 @@ def _patched_get_free_memory(
         )
 
     except Exception as error:
-        _warn_once(
-            "allocator_stats_failed",
-            "Cannot read XPU allocator statistics. "
-            "Using original ComfyUI calculation: %s",
-            error,
+        log(
+            (
+                f"{LOG_PREFIX} Allocator_stats_failed. | "
+                "Cannot read XPU allocator statistics. | "
+                f"Using original ComfyUI calculation.\n\n{error}"
+            ),
+            "error"
         )
-
         _set_backend("original ComfyUI fallback")
-
         return _original_get_free_memory(
             dev,
             torch_free_too,
@@ -254,15 +239,14 @@ def _patched_get_free_memory(
         )
 
     except Exception as mem_get_info_error:
-        _warn_once(
-            "mem_get_info_failed",
-            "mem_get_info is unavailable or invalid: %s. "
-            "Using original ComfyUI calculation.",
-            mem_get_info_error,
+        log(
+            (
+                f"{LOG_PREFIX} mem_get_info_failed mem_get_info is unavailable"
+                f"or invalid Using original ComfyUI calculation.\n{mem_get_info_error}"
+            ),
+            "error"
         )
-
         _set_backend("original ComfyUI fallback")
-
         return _original_get_free_memory(
             dev,
             torch_free_too,
@@ -284,30 +268,20 @@ def _install_patch() -> None:
         "_xpu_global_vram_v2",
         False,
     ):
-        logging.warning(
-            "%s Patch is already installed.",
-            LOG_PREFIX,
-        )
+        log(f"{LOG_PREFIX} Patch is already installed.", "info")
         return
 
     if (
         not hasattr(torch, "xpu")
         or not torch.xpu.is_available()
     ):
-        logging.warning(
-            "%s Intel XPU is unavailable.",
-            LOG_PREFIX,
-        )
+        log(f"{LOG_PREFIX} Intel XPU is unavailable.", "error")
         return
 
     device = model_management.get_torch_device()
 
     if not model_management.is_device_xpu(device):
-        logging.warning(
-            "%s Current ComfyUI device is not XPU: %s",
-            LOG_PREFIX,
-            device,
-        )
+        log(f"{LOG_PREFIX} Current ComfyUI device is not XPU: {device}", "error")
         return
 
     setattr(
@@ -333,23 +307,15 @@ def _install_patch() -> None:
                 device
             ).total_memory
         )
-
-        logging.warning(
-            "%s Patch installed. "
-            "Current usable free: %.2f GiB; "
-            "reusable PyTorch cache: %.2f GiB; "
-            "allocatable total: %.2f GiB.",
-            LOG_PREFIX,
-            available / 1024**3,
-            reusable / 1024**3,
-            allocatable_total / 1024**3,
+        log(
+            (
+                f"{LOG_PREFIX} Patch installed."
+                f"\nCurrent usable free: {available / 1024**3} GiB;"
+                f"\nreusable PyTorch cache: {reusable / 1024**3} GiB;"
+                f"\nallocatable total: {allocatable_total / 1024**3} GiB."
+            ),
+            "info"
         )
-
     except Exception:
         # The patched function already has safe fallbacks.
-        logging.exception(
-            "%s Initial diagnostic query failed.",
-            LOG_PREFIX,
-        )
-
-
+        log(f"{LOG_PREFIX} Initial diagnostic query failed.", "error")
