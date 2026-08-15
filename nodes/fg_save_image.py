@@ -28,14 +28,13 @@ Features:
 """
 import os
 import json
-import datetime
 import numpy as np
 from PIL import Image as PILImage
 from PIL.PngImagePlugin import PngInfo
 
 import folder_paths
 from comfy.cli_args import args
-from ._fg_helperfunctions import log
+from ._fg_helperfunctions import avoid_naming_collisions, get_output_path
 
 
 class FG_SaveImage:
@@ -118,7 +117,11 @@ class FG_SaveImage:
         extra_pnginfo=None
     ):
         # Resolve the output folder
-        full_output_folder, filename_base, subfolder = self._get_output_path(filename_prefix)
+        full_output_folder, filename_base, subfolder = get_output_path(
+            node_name       = self.NODE_NAME, 
+            filename_prefix = filename_prefix, 
+            output_path     = self.output_dir
+        )
         
         batch_size = len(images)
         results = []
@@ -131,7 +134,7 @@ class FG_SaveImage:
             # Determine filename
             if batch_size == 1:
                 file = f"{filename_base}{ext}"
-                file = self._avoid_collision(full_output_folder, filename_base, ext)
+                file = avoid_naming_collisions(full_output_folder, filename_base, ext)
             else:
                 file = f"{filename_base}_{batch_number:03d}{ext}"
             
@@ -233,56 +236,5 @@ class FG_SaveImage:
         
         return exif_data if exif_data else None
     
-    def _get_output_path(self, filename_prefix: str):
-        """Resolve output folder and compute filename with variable substitution."""
-        
-        # Variable substitution
-        if "%HMSf%" in filename_prefix:
-            filename_prefix = filename_prefix.replace(
-                "%HMSf%", 
-                f"{datetime.datetime.now():%H%M%S%f}"
-            )
 
-        # Split into subfolder and filename
-        subfolder = os.path.dirname(os.path.normpath(filename_prefix))
-        filename_base = os.path.basename(os.path.normpath(filename_prefix))
-        
-        full_output_folder = os.path.join(self.output_dir, subfolder)
-
-        # Security check
-        def _security_check(a:str, b:str) -> bool:
-            a = os.path.abspath(a.replace("\\", "/").lower())
-            b = os.path.abspath(b.replace("\\", "/").lower())
-            return a == b
-        if not _security_check(self.output_dir, full_output_folder):
-            log(f"{self.NODE_NAME}💾: Saving image outside: -> {self.output_dir}", message_type="warning")
-        
-        # Ensure folder exists
-        os.makedirs(full_output_folder, exist_ok=True)
-        
-        return full_output_folder, filename_base, subfolder
-    
-    def _avoid_collision(self, folder: str, basename: str, ext: str) -> str:
-        """
-        If file exists, append a suffix. 
-        Handles the rare case of microsecond collision.
-        """
-        filename = f"{basename}{ext}"
-        filepath = os.path.join(folder, filename)
-        
-        if not os.path.exists(filepath):
-            return filename
-        
-        # Collision: append counter
-        counter = 1
-        while True:
-            filename = f"{basename}_{counter:02d}{ext}"
-            filepath = os.path.join(folder, filename)
-            if not os.path.exists(filepath):
-                return filename
-            counter += 1
-            if counter > 99:
-                # Fallback to full timestamp
-                ts = datetime.datetime.now().strftime("%H%M%S%f")
-                return f"{basename}_{ts}{ext}"
 

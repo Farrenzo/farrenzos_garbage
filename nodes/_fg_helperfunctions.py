@@ -5,20 +5,18 @@ Some commonly re-used functions.
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+import re
 import math
+import json
 import torch
+import datetime
 import numpy as np
 from typing import List
+from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 import comfy.model_management
 from server import PromptServer
-
-MODEL_TYPES = {
-    "SDXL":   {"channels": 4,   "spatial_div": 8},
-    "Qwen":   {"channels": 4,   "spatial_div": 8},
-    "Flux":   {"channels": 128, "spatial_div": 16},
-    "ZImage": {"channels": 16,  "spatial_div": 8},
-}
 
 SCALING_METHODS = {
     "box"     : Image.BOX,
@@ -29,42 +27,15 @@ SCALING_METHODS = {
     "bilinear": Image.BILINEAR,
 }
 
-TERMINAL_COLOR_CODES = {
-    "blue"   :"\033[0;34m",
-    "cyan"   :"\033[0;36m",
-    "green"  :"\033[0;32m",
-    "grey"   :"\033[0;30m",
-    "purple" :"\033[0;35m",
-    "red"    :"\033[0;31m",
-    "white"  :"\033[0;37m",
-    "yellow" :"\033[0;33m",
+with open(Path(__file__).parent / "../web/js/_fg_settings.js", encoding='utf-8') as settings:
+    settings_data = settings.read()
+    json_match = re.search(r"\{.*\}", settings_data, re.DOTALL)
+    json_string = json_match.group(0)
+    global_settings: dict = json.loads(json_string)
 
-    "bold_blue"   :"\033[1;34m",
-    "bold_cyan"   :"\033[1;36m",
-    "bold_green"  :"\033[1;32m",
-    "bold_grey"   :"\033[1;30m",
-    "bold_purple" :"\033[1;35m",
-    "bold_red"    :"\033[1;31m",
-    "bold_white"  :"\033[1;37m",
-    "bold_yellow" :"\033[1;33m",
-
-    "backblack"  :"\033[40m",
-    "backblue"   :"\033[44m",
-    "backcyan"   :"\033[46m",
-    "backgray"   :"\033[47m",
-    "backgreen"  :"\033[42m",
-    "backpurple" :"\033[45m",
-    "backred"    :"\033[41m",
-    "backyellow" :"\033[43m",
-    "boldbackred":"\033[1;41m",
-
-    "blink"      :"\033[5m",
-    "bold"       :"\033[1m",
-    "concealed"  :"\033[8m",
-    "reset"      :"\033[0m",
-    "reverse"    :"\033[7m",
-    "underscore" :"\033[4m",
-}
+MODEL_TYPES = global_settings["model_types"]
+TERMINAL_COLOR_CODES = global_settings["terminal_color_codes"]
+ASPECT_RATIOS = global_settings["aspect_ratios"]
 
 
 def log(message:str, message_type:str="info") -> None:
@@ -272,3 +243,69 @@ def generate_text_image(width:int, height:int, text:str, font_file:str, text_sca
     y = int((height - text_height) / 2) - int(font_size / 2)
     draw.text((x, y), text, font=font, fill=font_color)
     return image
+
+
+def avoid_naming_collisions(folder: str, basename: str, ext: str) -> str:
+    """
+    If file exists, append a suffix.
+    Handles the rare case of microsecond collision.
+    """
+    filename = f"{basename}{ext}"
+    filepath = os.path.join(folder, filename)
+
+    if not os.path.exists(filepath):
+        return filename
+
+    # Collision: append counter
+    counter = 1
+    while True:
+        filename = f"{basename}_{counter:02d}{ext}"
+        filepath = os.path.join(folder, filename)
+        if not os.path.exists(filepath):
+            return filename
+        counter += 1
+        if counter > 99:
+            # Fallback to full timestamp
+            ts = datetime.datetime.now().strftime("%m%d%H%M%S%f")
+            return f"{basename}_{ts}{ext}"
+
+
+def get_output_path(node_name: str, filename_prefix: str, output_path: str) -> tuple[str, str, str]:
+    """Resolve output folder and compute filename with variable substitution."""
+
+    # Variable substitution
+    if "%HMSf%" in filename_prefix:
+        filename_prefix = filename_prefix.replace(
+            "%HMSf%",
+            f"{datetime.datetime.now():%m%d%H%M%S%f}"
+        )
+
+    # Split into subfolder and filename
+    subfolder = os.path.dirname(os.path.normpath(filename_prefix))
+    filename_base = os.path.basename(os.path.normpath(filename_prefix))
+
+    full_output_folder = os.path.join(output_path, subfolder)
+
+    # Security check: the target ideally should live within the outputs directory.
+    # An equality test would flag every legitimate subfolder, so this
+    # checks containment instead and rejects ".." traversal.
+    def _security_check(base: str, target: str) -> bool:
+        base = os.path.normcase(os.path.abspath(base))
+        target = os.path.normcase(os.path.abspath(target))
+        try:
+            return os.path.commonpath([base, target]) == base
+        except ValueError:
+            # Different drives on Windows
+            return False
+
+    if not _security_check(output_path, full_output_folder):
+        log(
+            f"{node_name}💾 is saving outside the output directory -> {full_output_folder}",
+            message_type="warning",
+        )
+
+    # Ensure folder exists
+    os.makedirs(full_output_folder, exist_ok=True)
+
+    return full_output_folder, filename_base, subfolder
+

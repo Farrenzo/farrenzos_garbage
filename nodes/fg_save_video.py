@@ -30,7 +30,7 @@ Features:
 """
 import os
 import json
-import datetime
+
 
 from fractions import Fraction
 
@@ -40,7 +40,7 @@ import numpy as np
 
 import folder_paths
 from comfy.cli_args import args
-from ._fg_helperfunctions import log
+from ._fg_helperfunctions import log, avoid_naming_collisions, get_output_path
 
 
 class FG_SaveVideo:
@@ -128,72 +128,6 @@ class FG_SaveVideo:
     # ------------------------------------------------------------------
     # Path handling
     # ------------------------------------------------------------------
-
-    def _get_output_path(self, filename_prefix: str):
-        """Resolve output folder and compute filename with variable substitution."""
-
-        # Variable substitution
-        if "%HMSf%" in filename_prefix:
-            filename_prefix = filename_prefix.replace(
-                "%HMSf%",
-                f"{datetime.datetime.now():%H%M%S%f}"
-            )
-
-        # Split into subfolder and filename
-        subfolder = os.path.dirname(os.path.normpath(filename_prefix))
-        filename_base = os.path.basename(os.path.normpath(filename_prefix))
-
-        full_output_folder = os.path.join(self.output_dir, subfolder)
-
-        # Security check: the target must live *under* the output directory.
-        # An equality test would flag every legitimate subfolder, so this
-        # checks containment instead and rejects ".." traversal.
-        def _security_check(base: str, target: str) -> bool:
-            base = os.path.normcase(os.path.abspath(base))
-            target = os.path.normcase(os.path.abspath(target))
-            try:
-                return os.path.commonpath([base, target]) == base
-            except ValueError:
-                # Different drives on Windows
-                return False
-
-        if not _security_check(self.output_dir, full_output_folder):
-            log(
-                f"{self.NODE_NAME}💾: Refusing to save outside the output directory "
-                f"-> {full_output_folder}",
-                message_type="warning",
-            )
-            full_output_folder = self.output_dir
-            subfolder = ""
-
-        # Ensure folder exists
-        os.makedirs(full_output_folder, exist_ok=True)
-
-        return full_output_folder, filename_base, subfolder
-
-    def _avoid_collision(self, folder: str, basename: str, ext: str) -> str:
-        """
-        If file exists, append a suffix.
-        Handles the rare case of microsecond collision.
-        """
-        filename = f"{basename}{ext}"
-        filepath = os.path.join(folder, filename)
-
-        if not os.path.exists(filepath):
-            return filename
-
-        # Collision: append counter
-        counter = 1
-        while True:
-            filename = f"{basename}_{counter:02d}{ext}"
-            filepath = os.path.join(folder, filename)
-            if not os.path.exists(filepath):
-                return filename
-            counter += 1
-            if counter > 99:
-                # Fallback to full timestamp
-                ts = datetime.datetime.now().strftime("%H%M%S%f")
-                return f"{basename}_{ts}{ext}"
 
     def _build_metadata(self, embed_metadata, prompt, extra_pnginfo):
         """Collect workflow metadata, or None if disabled."""
@@ -431,8 +365,12 @@ class FG_SaveVideo:
         resolved_format = "mp4" if format == "auto" else format
         extension = f".{resolved_format}"
 
-        full_output_folder, filename_base, subfolder = self._get_output_path(filename_prefix)
-        filename = self._avoid_collision(full_output_folder, filename_base, extension)
+        full_output_folder, filename_base, subfolder = get_output_path(
+            node_name       = self.NODE_NAME, 
+            filename_prefix = filename_prefix, 
+            output_path     = self.output_dir
+        )
+        filename = avoid_naming_collisions(full_output_folder, filename_base, extension)
         filepath = os.path.join(full_output_folder, filename)
 
         metadata = self._build_metadata(embed_metadata, prompt, extra_pnginfo)

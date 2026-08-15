@@ -9,25 +9,43 @@ app.registerExtension({
         const garbage_nodes = [
             "FG_Advanced_KSampler",
             "FG_ApplyControlNet",
-            "FG_EmptyLatent",
             "FG_BoxFillwCoordinates",
             "FG_CLIPTextEncode",
             "FG_CombinedImageTagger",
             "FG_CustomVAELoader",
             "FG_DynamicLoraLoader",
-            "FG_Florence2Captioner",
+            "FG_EmptyLatent",
             "FG_ImageScaler",
-            "FG_ModelImageScaler",
             "FG_KSampler",
             "FG_LABColorTransfer",
             "FG_LoadImage",
             "FG_Minimum_Maximum",
+            "FG_ModelImageScaler",
+            "FG_ModelReferenceLatentMethod",
             "FG_PurgeMemory",
             "FG_SaveImage",
+            "FG_SaveVideo",
             "FG_SendTelegramNotification",
             "FG_ShowText",
             "FG_WD14Tagger",
-            "FG_ModelReferenceLatentMethod"
+            "FG_MiniMaxH3_Conditioner",
+
+            "FG_XPUGuard",
+            "AnimaConditioningRegion",
+            "ApplyAnimaRegionalConditioningPatch",
+            "AnimaLLLiteApply",
+
+            "AnimaIPAdapterLoader",
+            "AnimaIPAdapterApply",
+            "AnimaSiglipeEncodeImage",
+            "AnimaImageEmbLoader",
+
+            "MultiLatentComposite",
+            "MultiAreaConditioning",
+            "ConditioningUpscale",
+            "ConditioningStretch",
+
+            "ConditioningKrea2Rebalance",
         ];
         if (!garbage_nodes.includes(node.comfyClass)) {
             return;
@@ -36,3 +54,7 @@ app.registerExtension({
         node.bgcolor = "#0c161bd8";
     },
 });
+
+
+
+
