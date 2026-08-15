@@ -6,7 +6,6 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-import re
 import math
 import json
 import torch
@@ -29,14 +28,12 @@ SCALING_METHODS = {
 
 with open(Path(__file__).parent / "../web/js/_fg_settings.js", encoding='utf-8') as settings:
     settings_data = settings.read()
-    json_match = re.search(r"\{.*\}", settings_data, re.DOTALL)
-    json_string = json_match.group(0)
-    global_settings: dict = json.loads(json_string)
+    # Really hacky way of ommitting first and last part of javascript file.
+    global_settings: dict = json.loads(settings_data.split("=", 1)[1].strip()[:-33])
 
 MODEL_TYPES = global_settings["model_types"]
-TERMINAL_COLOR_CODES = global_settings["terminal_color_codes"]
 ASPECT_RATIOS = global_settings["aspect_ratios"]
-
+TERMINAL_COLOR_CODES = global_settings["terminal_color_codes"]
 
 def log(message:str, message_type:str="info") -> None:
     message_types ={
@@ -47,9 +44,9 @@ def log(message:str, message_type:str="info") -> None:
         **TERMINAL_COLOR_CODES
     }
     if message_type not in message_types.keys():
-        print(f"[🗑️ Garbãƶe] -> {message}")
+        print(f"\033[46m [🗑️ Garbãƶe] -> {message}\033[m")
     else:
-        print(f"{message_types[message_type]} [🗑️ Garbãƶe] -> {message}\033[m")
+        print(f"\033{message_types[message_type]} [🗑️ Garbãƶe] -> {message}\033[m")
     return
 
 

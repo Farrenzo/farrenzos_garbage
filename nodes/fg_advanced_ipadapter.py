@@ -10,12 +10,34 @@ import comfy.clip_vision as c_visiz
 import comfy.utils       as c_utils
 import comfy.comfy_types as c_types
 
-WEIGHT_TYPES = ["linear", "ease in", "ease out", 'ease in-out', 'reverse in-out', 'weak input', 'weak output', 'weak middle', 'strong middle', 'style transfer', 'composition', 'strong style transfer', 'style and composition', 'style transfer precise', 'composition precise']
+WEIGHT_TYPES = [
+    "linear",
+    "ease in",
+    "ease out", 
+    "ease in-out",
+    "reverse in-out",
+    "weak input",
+    "weak output",
+    "weak middle",
+    "strong middle",
+    "composition",
+    "composition precise",
+    "style transfer",
+    "strong style transfer",
+    "style and composition",
+    "style transfer precise",
+]
+SCALING_EMBEDS = [
+    "V only",
+    "K+V",
+    "K+V w/ C penalty",
+    "K+mean(V) w/ C penalty",
+]
 
 class FG_ApplyIPAdapter:
     def __init__(self):
         self.NODE_NAME = "Apply IP Adapter"
-    
+
     RETURN_TYPES = ("MODEL", )
     RETURN_NAMES = ("Model")
     OUTPUT_TOOLTIPS = ("The adapted weighted model.",)
@@ -41,7 +63,7 @@ class FG_ApplyIPAdapter:
                 "combine_embeds": (["concat", "add", "subtract", "average", "norm average"],),
                 "start_at": (c_types.IO.FLOAT, {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.001, "tooltip": "The position the weight will be applied during the diffusion process."}),
                 "end_at":   (c_types.IO.FLOAT, {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.001, "tooltip": "The position the weight will be applied during the diffusion process."}),
-                "embeds_scaling": (['V only', 'K+V', 'K+V w/ C penalty', 'K+mean(V) w/ C penalty'], ),
+                "embeds_scaling": (SCALING_EMBEDS, ),
             },
             "optional": {
                 # Wire inputs
@@ -353,32 +375,34 @@ class To_KV(nn.Module):
                 self.to_kvs[key.replace(".weight", "").replace(".", "_")].weight.data = value
 
 
-def ipadapter_execute(model,
-                      ipadapter,
-                      clipvision,
-                      insightface=None,
-                      image=None,
-                      image_composition=None,
-                      image_negative=None,
-                      weight=1.0,
-                      weight_composition=1.0,
-                      weight_faceidv2=None,
-                      weight_kolors=1.0,
-                      weight_type="linear",
-                      combine_embeds="concat",
-                      start_at=0.0,
-                      end_at=1.0,
-                      attn_mask=None,
-                      pos_embed=None,
-                      neg_embed=None,
-                      unfold_batch=False,
-                      embeds_scaling='V only',
-                      layer_weights=None,
-                      encode_batch_size=0,
-                      style_boost=None,
-                      composition_boost=None,
-                      enhance_tiles=1,
-                      enhance_ratio=1.0,):
+def ipadapter_execute(
+    model,
+    ipadapter,
+    clipvision,
+    insightface=None,
+    image=None,
+    image_composition=None,
+    image_negative=None,
+    weight=1.0,
+    weight_composition=1.0,
+    weight_faceidv2=None,
+    weight_kolors=1.0,
+    weight_type="linear",
+    combine_embeds="concat",
+    start_at=0.0,
+    end_at=1.0,
+    attn_mask=None,
+    pos_embed=None,
+    neg_embed=None,
+    unfold_batch=False,
+    embeds_scaling='V only',
+    layer_weights=None,
+    encode_batch_size=0,
+    style_boost=None,
+    composition_boost=None,
+    enhance_tiles=1,
+    enhance_ratio=1.0,
+):
     device = model_management.get_torch_device()
     dtype = model_management.unet_dtype()
     if dtype not in [torch.float32, torch.float16, torch.bfloat16]:
