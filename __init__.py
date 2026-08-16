@@ -123,11 +123,12 @@ async def get_lora_preview(request):
     return web.FileResponse(path)
 
 # Instantiate
-from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS, log, _install_patch
+from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS, log, install_xpu_patch, start_keepalive
 with open(toml_path, "r") as f:
     VERSION = toml.load(f)["project"]["version"]
 
-_install_patch()
+install_xpu_patch()
+start_keepalive()
 log(f"v{VERSION} has loaded {len(NODE_DISPLAY_NAME_MAPPINGS)} nodes.", "finish")
 for _, n_name in NODE_DISPLAY_NAME_MAPPINGS.items():
     print(f"    \033[0;37m {n_name} \033[0m")

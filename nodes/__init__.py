@@ -1,5 +1,5 @@
 from ._fg_helperfunctions import log
-from .fg_intelCode import _install_patch
+from .fg_intelCode import install_xpu_patch, start_keepalive
 
 from .fg_advanced_ksampler    import FG_Advanced_KSampler
 from .fg_CLIP_text_encode     import FG_CLIPTextEncode

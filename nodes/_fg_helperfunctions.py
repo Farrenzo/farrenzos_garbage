@@ -6,6 +6,7 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+import gc
 import math
 import json
 import torch
@@ -26,10 +27,13 @@ SCALING_METHODS = {
     "bilinear": Image.BILINEAR,
 }
 
+_BACKEND_NAMES = ("cuda", "xpu", "mps", "npu", "mtia", "hpu")
+_ACCELERATORS = None
+
 with open(Path(__file__).parent / "../web/js/_fg_settings.js", encoding='utf-8') as settings:
     settings_data = settings.read()
     # Really hacky way of ommitting first and last part of javascript file.
-    global_settings: dict = json.loads(settings_data.split("=", 1)[1].strip()[:-33])
+    global_settings: dict = json.loads(settings_data[settings_data.index("{"):settings_data.rindex("}") + 1])
 
 MODEL_TYPES = global_settings["model_types"]
 ASPECT_RATIOS = global_settings["aspect_ratios"]
@@ -143,6 +147,10 @@ def unpack_masks(masks: list):
             mask_width, mask_height = tensor2pil(ma).size
     return unpacked_masks, mask_width, mask_height
 
+# ---------------------------------------- #
+# OLD
+# ---------------------------------------- #
+"""
 def clear_memory(purge_cache: bool = False, purge_models: bool = False):
     if purge_cache:
         import gc
@@ -161,6 +169,101 @@ def clear_memory(purge_cache: bool = False, purge_models: bool = False):
     if purge_models:
         comfy.model_management.unload_all_models()
     log(f"👝 Memory purged.")
+"""
+# ----------------------------------------
+# NEW
+# ----------------------------------------
+# Probed once, then cached. Order = preference when several are present.
+
+def _is_available(name, mod):
+    """torch.<backend>.is_available() isn't on every backend/version."""
+    fn = getattr(mod, "is_available", None)
+    if fn is None:
+        fn = getattr(getattr(torch.backends, name, None), "is_available", None)
+    try:
+        return bool(fn()) if fn else False
+    except Exception:
+        return False
+
+
+def get_accelerators(refresh: bool = False):
+    """
+    All usable torch accelerator backends as [(name, module), ...].
+
+    Returns a list, not a single winner — a FrankenWheel-style build can expose
+    cuda and xpu at the same time, and both want purging. Empty list = CPU only.
+    Note: ROCm reports itself as 'cuda'.
+    """
+    global _ACCELERATORS
+    if _ACCELERATORS is None or refresh:
+        found = []
+        for name in _BACKEND_NAMES:
+            mod = getattr(torch, name, None)
+            if mod is not None and _is_available(name, mod):
+                found.append((name, mod))
+        _ACCELERATORS = found
+    return _ACCELERATORS
+
+
+def get_devices(name, mod):
+    """torch.device objects for one backend. mps is single-device, unindexed."""
+    count_fn = getattr(mod, "device_count", None)
+    if count_fn is None:
+        return [torch.device(name)]
+    try:
+        count = int(count_fn())
+    except Exception:
+        count = 0
+    return [torch.device(f"{name}:{i}") for i in range(count)]
+
+
+def purge_backend(name, mod, device):
+    """Best-effort cache drop. Every call is optional on some backend."""
+    index = device.index
+
+    ctx = getattr(mod, "device", None)
+    handle = ctx(index) if (ctx is not None and index is not None) else None
+
+    try:
+        if handle is not None:
+            handle.__enter__()
+        for call in ("synchronize", "empty_cache", "ipc_collect"):
+            fn = getattr(mod, call, None)
+            if fn is None:
+                continue
+            try:
+                fn()
+            except Exception as e:
+                log(f"⚠️ torch.{name}.{call}() failed on {device}: {e}")
+    finally:
+        if handle is not None:
+            handle.__exit__(None, None, None)
+
+
+def clear_memory(purge_cache: bool = False, purge_models: bool = False, keep: float = 0.2):
+    """
+    keep: fraction of total VRAM to leave loaded (0.2 == the old 0.8 free target).
+    """
+    if purge_cache:
+        gc.collect()
+        for name, mod in get_accelerators():
+            for device in get_devices(name, mod):
+                try:
+                    comfy.model_management.free_memory(
+                        comfy.model_management.get_total_memory(device) * (1.0 - keep),
+                        device,
+                    )
+                except Exception as e:
+                    log(f"⚠️ free_memory failed on {device}: {e}")
+                purge_backend(name, mod, device)
+
+    if purge_models:
+        comfy.model_management.unload_all_models()
+
+    log(f"👝 Memory purged.")
+# ----------------------------------------
+# NEW ↑
+# ----------------------------------------
 
 def tensor2pil(t_image: torch.Tensor)  -> Image:
     if t_image.dtype != torch.float32:

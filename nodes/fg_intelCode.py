@@ -6,6 +6,21 @@ from ._fg_helperfunctions import log
 import comfy.model_management as model_management
 
 
+import os
+import time
+import threading
+
+import logging
+_LOG = logging.getLogger("FG_KeepAlive")
+
+_INTERVAL = float(os.environ.get("FG_KEEPALIVE_SECS", "30"))
+_DISABLED = os.environ.get("FG_KEEPALIVE_OFF") == "1"
+_MAX_CONSECUTIVE_FAILURES = 5
+
+_thread = None
+_stop = threading.Event()
+
+
 LOG_PREFIX = "[XPU Global VRAM V2]"
 MIB = 1024**2
 
@@ -258,7 +273,7 @@ def _patched_get_free_memory(
     return available
 
 
-def _install_patch() -> None:
+def install_xpu_patch() -> None:
     """Install the patch once during ComfyUI startup."""
 
     current_function = model_management.get_free_memory
@@ -319,3 +334,96 @@ def _install_patch() -> None:
     except Exception:
         # The patched function already has safe fallbacks.
         log(f"{LOG_PREFIX} Initial diagnostic query failed.", "error")
+
+
+# ---------------------------------- #
+# Keep the model in the GPU damnit! #
+# ---------------------------------- #
+
+"""
+FG_KeepAlive -- prevents Windows/WDDM from idle-evicting XPU allocations.
+
+Windows trims a compute adapter's allocations after ~72s of inactivity. On a
+headless Intel Arc this dumps everything resident into system RAM, and the
+restore (~6s for 20GB over PCIe) blocks long enough to trip TDR, surfacing as
+UR_RESULT_ERROR_DEVICE_LOST. Worse, the system-memory copy is never released,
+so RAM climbs until eviction starts targeting the pagefile and stops finishing.
+
+A trivial op submitted every N seconds resets the idle timer for the whole
+process context, keeping every allocation resident. Cost is microseconds.
+
+INSTALL
+    Drop this file in your node pack, then in __init__.py:
+
+        from .fg_keepalive import start_keepalive
+        start_keepalive()
+
+ENV
+    FG_KEEPALIVE_SECS   interval in seconds (default 30; must stay under ~72)
+    FG_KEEPALIVE_OFF    set to 1 to disable without editing code
+"""
+
+def _loop(interval):
+    scratch = None
+    pokes = 0
+    failures = 0
+
+    while not _stop.is_set():
+        try:
+            if scratch is None:
+                # Allocated once and reused -- repeated tiny allocations would
+                # churn the caching allocator for no reason.
+                scratch = torch.ones(64, 64, device="xpu")
+            scratch.mul_(1.0)          # write, so the page can't be considered clean
+            float(scratch.sum())       # read + implicit sync
+            pokes += 1
+            failures = 0
+            if pokes == 1:
+                _LOG.info("FG_KeepAlive active (every %.0fs)", interval)
+        except Exception as exc:
+            failures += 1
+            scratch = None             # force reallocation on the next attempt
+            _LOG.warning("FG_KeepAlive poke failed (%d/%d): %r",
+                         failures, _MAX_CONSECUTIVE_FAILURES, exc)
+            if failures >= _MAX_CONSECUTIVE_FAILURES:
+                _LOG.error("FG_KeepAlive giving up after %d consecutive failures",
+                           failures)
+                return
+        _stop.wait(interval)
+
+
+def start_keepalive(interval=None):
+    """Idempotent. Safe to call on non-XPU systems -- it just does nothing."""
+    global _thread
+
+    if _DISABLED:
+        _LOG.info("FG_KeepAlive disabled via FG_KEEPALIVE_OFF")
+        return False
+
+    if _thread is not None and _thread.is_alive():
+        return True
+
+    if not (hasattr(torch, "xpu") and torch.xpu.is_available()):
+        _LOG.debug("FG_KeepAlive: no XPU device, not starting")
+        return False
+
+    interval = float(interval) if interval else _INTERVAL
+    if interval >= 72:
+        _LOG.warning("FG_KeepAlive interval %.0fs is at or past the observed "
+                     "72s eviction threshold; clamping to 30s", interval)
+        interval = 30.0
+
+    _stop.clear()
+    _thread = threading.Thread(
+        target=_loop, args=(interval,), name="FG_KeepAlive", daemon=True
+    )
+    _thread.start()
+    return True
+
+
+def stop_keepalive():
+    """Mainly useful for A/B testing whether it's still needed."""
+    _stop.set()
+    if _thread is not None:
+        _thread.join(timeout=5)
+
