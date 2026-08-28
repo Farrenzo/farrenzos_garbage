@@ -21,7 +21,7 @@ from .fg_telegram_notice      import FG_SendTelegramNotification
 from .fg_upscale_model        import FG_ModelImageScaler
 from .fg_WD14                 import FG_WD14Tagger
 from .fg_xpu_guard            import FG_XPUGuard
-from .fg_minimax_h3           import FG_MiniMaxH3_Conditioner
+from .fg_unified_loader       import FG_UnifiedModelsLoader
 
 from .fg_anima.anima_controlnet_nodes import AnimaLLLiteApply
 from .fg_anima.anima_regional_prompt_nodes import AnimaConditioningRegion, ApplyAnimaRegionalConditioningPatch
@@ -39,6 +39,23 @@ from .fg_regional_prompt_nodes import (
     ConditioningUpscale,
     ConditioningStretch,
 )
+
+from .fg_SCAIL2 import (
+    SCAIL2EasyConfig,
+    SCAIL2AutoVideo,
+    SCAIL2RunInfo,
+)
+
+from .fg_minimax.fg_minimax_autochain import (
+MiniMaxH3AutoChainMotionContext,
+MiniMaxH3AutoChainMotionContextTrim,
+MiniMaxH3AutoChainSaveLatent,
+MiniMaxH3AutoChainLoadLatent,
+MiniMaxH3AutoChainAudio,
+MiniMaxH3AutoChain,
+MiniMaxH3AutoChainFrameReference,
+)
+from .fg_minimax.fg_minimax_h3 import FG_MiniMaxH3_Conditioner
 
 NODE_CLASS_MAPPINGS = {
     "FG_Advanced_KSampler"           : FG_Advanced_KSampler,
@@ -62,6 +79,7 @@ NODE_CLASS_MAPPINGS = {
     "FG_WD14Tagger"                  : FG_WD14Tagger,
     "FG_XPUGuard"                    : FG_XPUGuard,
     "FG_MiniMaxH3_Conditioner"       : FG_MiniMaxH3_Conditioner,
+    "FG_UnifiedModelsLoader"         : FG_UnifiedModelsLoader,
 
     # Experimental Anima nodes
     "AnimaConditioningRegion": AnimaConditioningRegion,
@@ -80,6 +98,20 @@ NODE_CLASS_MAPPINGS = {
 
     # Experimental Krea2 nodes
     "ConditioningKrea2Rebalance": ConditioningKrea2Rebalance,
+
+    # Experimental SCAIL2 nodes
+    "SCAIL2EasyConfig" : SCAIL2EasyConfig,
+    "SCAIL2AutoVideo"  : SCAIL2AutoVideo,
+    "SCAIL2RunInfo"    : SCAIL2RunInfo,
+
+
+    "MiniMaxH3AutoChainMotionContext":     MiniMaxH3AutoChainMotionContext,
+    "MiniMaxH3AutoChainMotionContextTrim": MiniMaxH3AutoChainMotionContextTrim,
+    "MiniMaxH3AutoChainSaveLatent":        MiniMaxH3AutoChainSaveLatent,
+    "MiniMaxH3AutoChainLoadLatent":        MiniMaxH3AutoChainLoadLatent,
+    "MiniMaxH3AutoChainAudio":             MiniMaxH3AutoChainAudio,
+    "MiniMaxH3AutoChain":                  MiniMaxH3AutoChain,
+    "MiniMaxH3AutoChainFrameReference":    MiniMaxH3AutoChainFrameReference,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -105,11 +137,12 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FG_ShowText"                    : "🗑️ Show Text",
     "FG_WD14Tagger"                  : "🗑️ WD14 Tagger (Booru Tags)",
     "FG_MiniMaxH3_Conditioner"       : "🗑️ MiniMax H3 Conditioner",
+    "FG_UnifiedModelsLoader"         : "🗑️ Unified Models Loader",
 
-    "FG_XPUGuard"                    : "⚙️ XPU Guard (Device Health)",
-    "AnimaConditioningRegion":             "⚙️ Anima Conditioning Region",
-    "ApplyAnimaRegionalConditioningPatch": "⚙️ Apply Anima Regional Conditioning Patch",
-    "AnimaLLLiteApply": "⚙️ Apply Anima ControlNet-LLLite",
+    "FG_XPUGuard"                         : "⚙️ XPU Guard (Device Health)",
+    "AnimaConditioningRegion"             : "⚙️ Anima Conditioning Region",
+    "ApplyAnimaRegionalConditioningPatch" : "⚙️ Apply Anima Regional Conditioning Patch",
+    "AnimaLLLiteApply"                    : "⚙️ Apply Anima ControlNet-LLLite",
 
     "AnimaIPAdapterLoader"   : "⚙️ Anima IP-Adapter Loader",
     "AnimaIPAdapterApply"    : "⚙️ Anima IP-Adapter Apply",
@@ -122,4 +155,16 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ConditioningStretch":   "⚙️ Conditioning Stretch",
 
     "ConditioningKrea2Rebalance": "🎛️ Krea 2 Conditioning Control",
+
+    "SCAIL2EasyConfig": "⚙️ SCAIL-2 Easy Config",
+    "SCAIL2AutoVideo":  "⚙️ SCAIL-2 Auto Video (loop)",
+    "SCAIL2RunInfo":    "⚙️ SCAIL-2 Run Info",
+
+    "MiniMaxH3AutoChainMotionContext":     "⚙️ H3 Auto Chain Motion Context",
+    "MiniMaxH3AutoChainMotionContextTrim": "⚙️ H3 Auto Chain Motion Context Trim",
+    "MiniMaxH3AutoChainSaveLatent":        "⚙️ H3 Auto Chain Save Latent",
+    "MiniMaxH3AutoChainLoadLatent":        "⚙️ H3 Auto Chain Load Latent",
+    "MiniMaxH3AutoChainAudio":             "⚙️ H3 Auto Chain Audio",
+    "MiniMaxH3AutoChain":                  "⚙️ H3 Auto Chain + Stitch",
+    "MiniMaxH3AutoChainFrameReference":    "⚙️ H3 Auto Chain Frame Reference",
 }

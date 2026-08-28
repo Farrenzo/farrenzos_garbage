@@ -336,9 +336,9 @@ def install_xpu_patch() -> None:
         log(f"{LOG_PREFIX} Initial diagnostic query failed.", "error")
 
 
-# ---------------------------------- #
-# Keep the model in the GPU damnit! #
-# ---------------------------------- #
+# ----------------------------------- #
+#  Keep the model in the GPU damnit!  #
+# ----------------------------------- #
 
 """
 FG_KeepAlive -- prevents Windows/WDDM from idle-evicting XPU allocations.

@@ -29,6 +29,8 @@ app.registerExtension({
             "FG_ShowText",
             "FG_WD14Tagger",
             "FG_MiniMaxH3_Conditioner",
+            "FG_XPUGuard",
+            "FG_UnifiedModelsLoader",
 
             "FG_XPUGuard",
             "AnimaConditioningRegion",
@@ -46,6 +48,18 @@ app.registerExtension({
             "ConditioningStretch",
 
             "ConditioningKrea2Rebalance",
+
+            "SCAIL2EasyConfig",
+            "SCAIL2AutoVideo",
+            "SCAIL2RunInfo",
+
+            "MiniMaxH3AutoChainMotionContext",
+            "MiniMaxH3AutoChainMotionContextTrim",
+            "MiniMaxH3AutoChainSaveLatent",
+            "MiniMaxH3AutoChainLoadLatent",
+            "MiniMaxH3AutoChainAudio",
+            "MiniMaxH3AutoChain",
+            "MiniMaxH3AutoChainFrameReference",
         ];
         if (!garbage_nodes.includes(node.comfyClass)) {
             return;
@@ -54,7 +68,4 @@ app.registerExtension({
         node.bgcolor = "#0c161bd8";
     },
 });
-
-
-
 

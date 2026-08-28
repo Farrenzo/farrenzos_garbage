@@ -49,8 +49,14 @@ class FG_LoadImage:
     CATEGORY = "Farrenzo's Garbage/Utils"
     DESCRIPTION = "Load an image from disk, but also get the width and height for it as well."
 
+    @staticmethod
+    def _resolve_path(image):
+        if os.path.isabs(image):
+            return image
+        return folder_paths.get_annotated_filepath(image)
+
     def load_image(self, image):
-        image_path = folder_paths.get_annotated_filepath(image)
+        image_path = self._resolve_path(image)
         img = node_helpers.pillow(Image.open, image_path)
 
         output_images = []
@@ -100,7 +106,7 @@ class FG_LoadImage:
 
     @classmethod
     def IS_CHANGED(s, image):
-        image_path = folder_paths.get_annotated_filepath(image)
+        image_path = s._resolve_path(image)
         m = hashlib.sha256()
         with open(image_path, 'rb') as f:
             m.update(f.read())
@@ -108,7 +114,10 @@ class FG_LoadImage:
 
     @classmethod
     def VALIDATE_INPUTS(s, image):
+        if os.path.isabs(image):
+            if not os.path.isfile(image):
+                return f"Invalid image file: {image}"
+            return True
         if not folder_paths.exists_annotated_filepath(image):
             return f"Invalid image file: {image}"
-
         return True
