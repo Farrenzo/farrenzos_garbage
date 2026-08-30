@@ -31,6 +31,7 @@ from .fg_anima.anima_ipadapter_nodes import (
     AnimaSiglipeEncodeImage,
     AnimaImageEmbLoader,
 )
+from .fg_anima.anima_cosmos_latent import ApplyCosmosReferenceLatent
 
 from .fg_krea2_rebalance import ConditioningKrea2Rebalance
 from .fg_regional_prompt_nodes import (
@@ -90,6 +91,7 @@ NODE_CLASS_MAPPINGS = {
     "AnimaIPAdapterApply":     AnimaIPAdapterApply,
     "AnimaSiglipeEncodeImage": AnimaSiglipeEncodeImage,
     "AnimaImageEmbLoader":     AnimaImageEmbLoader,
+    "ApplyCosmosReferenceLatent": ApplyCosmosReferenceLatent,
 
     "MultiLatentComposite":  MultiLatentComposite,
     "MultiAreaConditioning": MultiAreaConditioning,
@@ -138,11 +140,12 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FG_WD14Tagger"                  : "🗑️ WD14 Tagger (Booru Tags)",
     "FG_MiniMaxH3_Conditioner"       : "🗑️ MiniMax H3 Conditioner",
     "FG_UnifiedModelsLoader"         : "🗑️ Unified Models Loader",
+    "FG_XPUGuard"                    : "🗑️ XPU Guard (Device Health)",
 
-    "FG_XPUGuard"                         : "⚙️ XPU Guard (Device Health)",
-    "AnimaConditioningRegion"             : "⚙️ Anima Conditioning Region",
-    "ApplyAnimaRegionalConditioningPatch" : "⚙️ Apply Anima Regional Conditioning Patch",
-    "AnimaLLLiteApply"                    : "⚙️ Apply Anima ControlNet-LLLite",
+    "AnimaConditioningRegion"            : "⚙️ Anima Conditioning Region",
+    "ApplyAnimaRegionalConditioningPatch": "⚙️ Anima Apply Anima Regional Conditioning Patch",
+    "AnimaLLLiteApply"                   : "⚙️ Anima Apply Anima ControlNet-LLLite",
+    "ApplyCosmosReferenceLatent"         : "⚙️ Anima Apply Cosmos Reference Latent",
 
     "AnimaIPAdapterLoader"   : "⚙️ Anima IP-Adapter Loader",
     "AnimaIPAdapterApply"    : "⚙️ Anima IP-Adapter Apply",
