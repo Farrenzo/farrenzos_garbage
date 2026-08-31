@@ -209,9 +209,11 @@ _test_models/
 _test_models/*
 */__pycache__
 __pycache__/
-/models/wd-eva02-large-tagger-v3.onnx
+/models/wd14_v3/wd-eva02-large-tagger-v3.onnx
+/models/siglip2/model.safetensors
 _env.json
 notes.txt
 fun_colors.py
 *.onnx
+*.safetensors
 .vscode

@@ -4,8 +4,57 @@ Injection method: monkey-patch each DiT block's cross_attn.forward to add
 IP cross-attention output alongside text cross-attention output.
 """
 
-import torch
+import os, torch
 from .anima_methods import IPAdapterSigLIP
+from ... import GOOGLE_SIGLIP2_DIR
+import comfy.model_management as mm
+
+_SIGLIP_CACHE = {"model": None, "proc": None}
+
+
+def _siglip2_dir() -> str:
+    # Deferred to avoid a circular import at module load.
+    from ... import GOOGLE_SIGLIP2_DIR, GOOGLE_SIGLIP2_INFO
+    if not os.path.isdir(GOOGLE_SIGLIP2_DIR) or not os.listdir(GOOGLE_SIGLIP2_DIR):
+        raise FileNotFoundError(
+            f"SigLIP2 not found at {GOOGLE_SIGLIP2_DIR}. Download "
+            f"{GOOGLE_SIGLIP2_INFO['hf_repo']} into that folder, e.g.:\n"
+            f"  huggingface-cli download {GOOGLE_SIGLIP2_INFO['hf_repo']} "
+            f"--local-dir \"{GOOGLE_SIGLIP2_DIR}\""
+        )
+    return GOOGLE_SIGLIP2_DIR
+
+
+def _load_siglip2():
+    if _SIGLIP_CACHE["model"] is not None:
+        return _SIGLIP_CACHE["model"], _SIGLIP_CACHE["proc"]
+
+    from transformers import SiglipVisionModel, AutoImageProcessor
+
+    path   = _siglip2_dir()
+    device = mm.text_encoder_device()
+    dtype  = mm.text_encoder_dtype(device)
+
+    model = SiglipVisionModel.from_pretrained(
+        path, torch_dtype=dtype, local_files_only=True,
+    ).to(device).eval()
+    model.requires_grad_(False)
+
+    proc = AutoImageProcessor.from_pretrained(
+        path, local_files_only=True, use_fast=True,
+    )
+
+    _SIGLIP_CACHE["model"], _SIGLIP_CACHE["proc"] = model, proc
+    return model, proc
+
+
+def purge_siglip2():
+    """Called by FG_PurgeVRAM."""
+    if _SIGLIP_CACHE["model"] is not None:
+        _SIGLIP_CACHE["model"].to("cpu")
+    _SIGLIP_CACHE["model"] = None
+    _SIGLIP_CACHE["proc"] = None
+    mm.soft_empty_cache()
 
 
 # ─── IP-Adapter Injection ────────────────────────────────────────────
@@ -188,46 +237,38 @@ class AnimaSiglipeEncodeImage:
 
     def encode(self, image):
         from PIL import Image as PILImage
-        from transformers import SiglipVisionModel, AutoImageProcessor
 
-        # Lazy load
-        if not hasattr(self, '_siglip'):
-            self._siglip = SiglipVisionModel.from_pretrained(
-                "google/siglip2-base-patch16-512",
-                torch_dtype=torch.bfloat16, trust_remote_code=True,
-            ).cuda().eval()
-            self._siglip_proc = AutoImageProcessor.from_pretrained(
-                "google/siglip2-base-patch16-512", trust_remote_code=True,
-            )
+        siglip, proc = _load_siglip2()
+        device = mm.text_encoder_device()
+        dtype  = next(siglip.parameters()).dtype
 
-        # ComfyUI IMAGE: [B, H, W, 3] float [0,1] → PIL list
-        if image.ndim == 4:
-            batch = image
-        else:
-            batch = image.unsqueeze(0)
+        mm.load_models_gpu([]) # make room before the aux encoder runs
+        siglip.to(device)
 
-        pil_images = []
+        batch = image if image.ndim == 4 else image.unsqueeze(0)
+
+        padded = []
         for i in range(batch.shape[0]):
             img_np = (batch[i].cpu().numpy() * 255).clip(0, 255).astype("uint8")
-            pil_images.append(PILImage.fromarray(img_np))
-
-        # Pad to square 512
-        padded = []
-        for pil in pil_images:
+            pil = PILImage.fromarray(img_np)
             w, h = pil.size
-            size = max(w, h)
             if w == h:
                 padded.append(pil.resize((512, 512)))
             else:
+                size = max(w, h)
                 canvas = PILImage.new("RGB", (size, size), (255, 255, 255))
                 canvas.paste(pil, ((size - w) // 2, (size - h) // 2))
                 padded.append(canvas.resize((512, 512)))
 
-        inputs = self._siglip_proc(images=padded, return_tensors="pt", do_resize=False)
-        inputs = {k: v.to("cuda", dtype=torch.bfloat16) for k, v in inputs.items()}
+        inputs = proc(images=padded, return_tensors="pt", do_resize=False)
+        inputs = {k: v.to(device=device, dtype=dtype) for k, v in inputs.items()}
 
-        with torch.no_grad():
-            features = self._siglip(**inputs).last_hidden_state  # [B, N, 768]
+        try:
+            with torch.no_grad():
+                features = siglip(**inputs).last_hidden_state   # [B, N, 768]
+        finally:
+            siglip.to(mm.text_encoder_offload_device())
+            mm.soft_empty_cache()
 
         return (features.float(),)
 

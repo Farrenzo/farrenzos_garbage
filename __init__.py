@@ -26,6 +26,10 @@ initial_settings = {
                 "csv": "wd-eva02-large-tagger-v3.csv"
             }
         }
+    },
+    "GOOGLE_SIGLIP2": {
+        "hf_repo":"google/siglip2-base-patch16-512",
+        "directory": "siglip2"
     }
 }
 
@@ -47,9 +51,9 @@ def set_up_lora_index() -> tuple[dict, str, str]:
         print(f"Created `.lora_previews` folder at {lora_previews_path}")
         os.makedirs(lora_previews_path)
 
-    lora_index_file_path = folder_paths.get_full_path("loras", "/.lora_previews/fg_dynamic_lora_loader.json")
+    lora_index_file_path = folder_paths.get_full_path("loras", "/.lora_previews/_fg_dynamic_lora_loader.json")
     if not lora_index_file_path:
-        lora_index_file_path = f"{lora_folder_paths[0]}/.lora_previews/fg_dynamic_lora_loader.json"
+        lora_index_file_path = f"{lora_folder_paths[0]}/.lora_previews/_fg_dynamic_lora_loader.json"
         lora_files = {}
         for folder_path in lora_folder_paths:
             for walk_path, _, file_names in os.walk(folder_path):
@@ -80,6 +84,8 @@ TELEGRAM_PRIVATE_API = NODE_SETTINGS["TELEGRAM_PRIVATE_API"]
 WD_14_INFO = NODE_SETTINGS["WD_14_TAGGER"]
 model_path = os.path.join(current_path, f"models/{WD_14_INFO['directory']}")
 WD_14_INFO["model_path"] = model_path
+GOOGLE_SIGLIP2_INFO = NODE_SETTINGS["GOOGLE_SIGLIP2"]
+GOOGLE_SIGLIP2_DIR  = os.path.join(current_path, "models", GOOGLE_SIGLIP2_INFO["directory"])
 
 
 # LoRA Loader section.

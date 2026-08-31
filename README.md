@@ -51,6 +51,10 @@ They should all work right out of the box with no pip setups required.
                 "csv": "wd-eva02-large-tagger-v3.csv"
             }
         }
+    },
+    "GOOGLE_SIGLIP2": {
+        "hf_repo":"google/siglip2-base-patch16-512",
+        "directory": "siglip2"
     }
 }
 ```
@@ -73,38 +77,42 @@ They should all work right out of the box with no pip setups required.
 4. Look for the `chat.id` field in the response
 5. Save the chat id to the `"TELEGRAM_CHAT_ID": the_chat_id`. 
 
-## Setting Up Ollama & WD14 Booru tagger
+## Setting Up required models:
+This node pack firmly believes in you downloading things for yourself. Know what is running in your systems. You are responsible for downloading the booru tagger and siglip base models.
 
-Because this node pack strongly believes in you downloading things for yourself you are going to have to download the WD_1.4 booru tagger model.  
-Go to: [SmilingWolf Huggingface Repo](https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3/tree/main) & download:  
+***WD14 Booru tagger***: Go to: [SmilingWolf Huggingface Repo](https://huggingface.co/SmilingWolf/wd-eva02-large-tagger-v3/tree/main) & download: 
 
  - model.onnx
- - SHA256: 9e768793060c7939b277ccb382783e8670e8a042d29d77aa736be0c8cc898bfc
- - IMPORTANT: If you rename it, change the corresponding `env.json` entry.
- - Place the download in: `../custom_nodes/farrenzos_garbage/models/wd14_v3/model.onnx
+ - **SHA256**: 9e768793060c7939b277ccb382783e8670e8a042d29d77aa736be0c8cc898bfc
+ - ***Important***: If you rename it, change the corresponding `env.json` entry.
+ - Place the download in: `../custom_nodes/farrenzos_garbage/models/wd14_v3/model.onnx`
+
+***Google Siglip***: Go to: [SigLIP 2 Base](https://huggingface.co/google/siglip2-base-patch16-512/main) & download:
+
+ - model.safetensors
+ - **SHA256**: fe0e601c625e69eed8e73500d39e9b6164403fe03db8048e87913c3cefbbb3fe
+ - Place the download in: `../custom_nodes/farrenzos_garbage/models/siglip2/model.safetensors`
 
 Restart comfy & voila.
 
 ## Setting Up Dynamic LoRA Loader
-This node works best if you go into your models/loras folder and fill out the prefilled `.json` file. Add trigger words and generate a few images for the preview. Use 128x128 jpg images and convert them into base 64. Contents should look like this:
+
+After the initial run of comfy with this node pack, inside your LoRA's folder you will find a folder called `.lora_previews`. You can move this folder to any LoRA folder that comfy recognizes. If you have a central location for all your models, and they are properly listed in comfy's `extra_model_paths.yaml` file, the folder will be visible. Inside `.lora_previews` you will find a prefilled `_fg_dynamic_lora_loader.json` index file. Edit that index file with trigger words to your hearts content. Generate a few images for the preview. Use square 512*512 webp images and save them in the previews folder under the **exact** same name as the LoRA. So if your LoRA is called `something_v1.safetensors` the preview image should be called `something_v1.jpg/webp/png/etc`. Webp is recommended due to it's tiny size.
 
 ```JSON
 {
     "some_lora_name_at_top_level_of_lora_folder.safetensors":{
-        "trigger_words": "trigger_word_1, trigger_word_2, trigger_word_3, etc this is a string or long sentence",
-        "preview_image": "data:image/png;base64,REALLY_REALLY_REALLY_LONG_STRING"
+        "trigger_words": "trigger_word_1, trigger_word_2, trigger_word_3, long sentence"
     },
     "some_folder_name\\some_lora_name.safetensors":{
-        "trigger_words": "trigger_word_1, trigger_word_2, trigger_word_3, etc this is a string or long sentence",
-        "preview_image": "data:image/png;base64,REALLY_REALLY_REALLY_LONG_STRING"
+        "trigger_words": "trigger_word_1, trigger_word_2, trigger_word_3, something descriptive"
     },
     "some_other_folder_name\\some_other_lora_name.safetensors":{
-        "trigger_words": "trigger_word_1, trigger_word_2, trigger_word_3, etc this is a string or long sentence",
-        "preview_image": "data:image/jpg;base64,REALLY_REALLY_REALLY_LONG_STRING"
+        "trigger_words": "trigger_word_1, trigger_word_2, trigger_word_3, I've ran out of creativity"
     }
 }
 ```
-Tip: you can use this same file to save lora info like site downloaded, SHA256, etc. The node only cares about the two top keys trigger words & preview image.
+Tip: you can use this same file to save lora info like site downloaded, SHA256, etc. The node only cares about the trigger word. Storing LoRA sha256 makes it easy to search for later and compare if you have that file. No restart required. It's all javascript so a refresh will show you changes instantly.
 
 ### Notice
 1. The `aiohttp` call in the beginning is only so that javascript may communicate with the LoRA loader node. Nothing will be downloaded on your behalf.
