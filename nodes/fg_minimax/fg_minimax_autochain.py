@@ -91,7 +91,7 @@ class MiniMaxH3AutoChainSaveLatent:
     RETURN_TYPES = ("STRING",)
     FUNCTION = "save"
     OUTPUT_NODE = True
-    CATEGORY = "conditioning/minimax"
+    CATEGORY = "Farrenzo's Garbage/MiniMaxH3/Conditioning"
 
     def save(self, latent, filename_prefix, clip_index=0, chain_config=None):
         if _st_save is None:
@@ -128,7 +128,7 @@ class MiniMaxH3AutoChainLoadLatent:
 
     RETURN_TYPES = ("LATENT",)
     FUNCTION = "load"
-    CATEGORY = "conditioning/minimax"
+    CATEGORY = "Farrenzo's Garbage/MiniMaxH3/Conditioning"
 
     @classmethod
     def IS_CHANGED(cls, latent_path, clip_index=0, reset=False,
@@ -194,7 +194,7 @@ class MiniMaxH3AutoChainMotionContext:
     RETURN_TYPES = ("CONDITIONING", "INT")
     RETURN_NAMES = ("conditioning", "trim_frames")
     FUNCTION = "apply"
-    CATEGORY = "conditioning/minimax"
+    CATEGORY = "Farrenzo's Garbage/MiniMaxH3/Conditioning"
 
     def apply(self, conditioning, vae, latent, context_length,
               audio_context_length=24, context_frames=None,
@@ -587,7 +587,7 @@ class MiniMaxH3AutoChainAudio:
     RETURN_NAMES = ("audio", "chunk_seconds", "clip_index", "chain_id",
                     "prompt", "chain_config", "source_audio")
     FUNCTION = "chunk"
-    CATEGORY = "conditioning/minimax"
+    CATEGORY = "Farrenzo's Garbage/MiniMaxH3/Conditioning"
     DESCRIPTION = ("Splits one AUDIO input into sequential chunks and reports "
                    "the chunk duration for H3 Reference To Video.")
 
@@ -742,7 +742,7 @@ class MiniMaxH3AutoChain:
     RETURN_TYPES = ("VIDEO",)
     FUNCTION = "advance"
     OUTPUT_NODE = True
-    CATEGORY = "conditioning/minimax"
+    CATEGORY = "Farrenzo's Garbage/MiniMaxH3/Conditioning"
     DESCRIPTION = ("Automatically requeues the next H3 chunk, advances the "
                    "Motion Context latent slots, and stitches all clips into "
                    "one MP4 when the audio is complete.")
@@ -890,7 +890,7 @@ class MiniMaxH3AutoChainFrameReference:
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("reference_image",)
     FUNCTION = "reference"
-    CATEGORY = "conditioning/minimax"
+    CATEGORY = "Farrenzo's Garbage/MiniMaxH3/Conditioning"
     DESCRIPTION = "Keeps the H3 character reference by chaining final frames."
 
     @classmethod

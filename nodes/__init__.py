@@ -9,7 +9,7 @@ from .fg_empty_latent         import FG_EmptyLatent
 from .fg_image_scale          import FG_ImageScaler
 from .fg_lab_color_transfer   import FG_LABColorTransfer
 from .fg_load_image           import FG_LoadImage
-from .fg_load_vae             import FG_VAELoader
+from .fg_load_vae             import FG_LatentTransfer
 from .fg_lora_loader          import FG_LoraLoader
 from .fg_min_max              import FG_MinimumMaximum
 from .fg_model_reference      import FG_ModelReferenceLatentMethod
@@ -22,6 +22,7 @@ from .fg_upscale_model        import FG_ModelImageScaler
 from .fg_WD14                 import FG_WD14Tagger
 from .fg_xpu_guard            import FG_XPUGuard
 from .fg_unified_loader       import FG_UnifiedModelsLoader
+from .fg_linework_composite   import FG_LineworkComposite
 
 from .fg_anima.anima_controlnet_nodes import AnimaLLLiteApply
 from .fg_anima.anima_regional_prompt_nodes import AnimaConditioningRegion, ApplyAnimaRegionalConditioningPatch
@@ -29,11 +30,13 @@ from .fg_anima.anima_ipadapter_nodes import (
     AnimaIPAdapterLoader,
     AnimaIPAdapterApply,
     AnimaSiglipeEncodeImage,
-    AnimaImageEmbLoader,
+    AnimaIPAdapterVisualize
 )
-from .fg_anima.anima_cosmos_latent import ApplyCosmosReferenceLatent
+from .fg_anima.anima_cosmos_latent import FG_ApplyCosmosReferenceLatent
+
 
 from .fg_krea2_rebalance import ConditioningKrea2Rebalance
+
 from .fg_regional_prompt_nodes import (
     MultiLatentComposite,
     MultiAreaConditioning,
@@ -61,9 +64,10 @@ from .fg_minimax.fg_minimax_h3 import FG_MiniMaxH3_Conditioner
 NODE_CLASS_MAPPINGS = {
     "FG_Advanced_KSampler"           : FG_Advanced_KSampler,
     "FG_ApplyControlNet"             : FG_ApplyControlNet,
+    "FG_ApplyCosmosReferenceLatent"  : FG_ApplyCosmosReferenceLatent,
     "FG_BoxFillwCoordinates"         : FG_CoordinatesBoxFill,
     "FG_CLIPTextEncode"              : FG_CLIPTextEncode,
-    "FG_CustomVAELoader"             : FG_VAELoader,
+    "FG_LatentTransfer"              : FG_LatentTransfer,
     "FG_DynamicLoraLoader"           : FG_LoraLoader,
     "FG_EmptyLatent"                 : FG_EmptyLatent,
     "FG_ImageScaler"                 : FG_ImageScaler,
@@ -81,6 +85,7 @@ NODE_CLASS_MAPPINGS = {
     "FG_XPUGuard"                    : FG_XPUGuard,
     "FG_MiniMaxH3_Conditioner"       : FG_MiniMaxH3_Conditioner,
     "FG_UnifiedModelsLoader"         : FG_UnifiedModelsLoader,
+    "FG_LineworkComposite"           : FG_LineworkComposite,
 
     # Experimental Anima nodes
     "AnimaConditioningRegion": AnimaConditioningRegion,
@@ -90,8 +95,7 @@ NODE_CLASS_MAPPINGS = {
     "AnimaIPAdapterLoader":    AnimaIPAdapterLoader,
     "AnimaIPAdapterApply":     AnimaIPAdapterApply,
     "AnimaSiglipeEncodeImage": AnimaSiglipeEncodeImage,
-    "AnimaImageEmbLoader":     AnimaImageEmbLoader,
-    "ApplyCosmosReferenceLatent": ApplyCosmosReferenceLatent,
+    "AnimaIPAdapterVisualize": AnimaIPAdapterVisualize,
 
     "MultiLatentComposite":  MultiLatentComposite,
     "MultiAreaConditioning": MultiAreaConditioning,
@@ -118,19 +122,21 @@ NODE_CLASS_MAPPINGS = {
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "FG_Advanced_KSampler"           : "🗑️ Advanced KSampler",
+    "FG_ApplyCosmosReferenceLatent"  : "🗑️ Anima Apply Cosmos Reference Latent",
     "FG_ApplyControlNet"             : "🗑️ Apply Advanced ControlNet",
     "FG_BoxFillwCoordinates"         : "🗑️ Coordinate Box Fill",
     "FG_CLIPTextEncode"              : "🗑️ Enhanced CLIP Text Encode",
     "FG_CombinedImageTagger"         : "🗑️ Combined Image Tagger",
-    "FG_CustomVAELoader"             : "🗑️ Custom VAE Loader",
+    "FG_LatentTransfer"              : "🗑️ Latent Transfer (VAE to VAE)",
     "FG_DynamicLoraLoader"           : "🗑️ Multi-LoRA Loader",
     "FG_EmptyLatent"                 : "🗑️ Advanced Empty Latent",
     "FG_ImageScaler"                 : "🗑️ Image Scaler",
+    "FG_ModelImageScaler"            : "🗑️ Image Scale with Model",
     "FG_KSampler"                    : "🗑️ KSampler for Qwen Image Edit",
     "FG_LABColorTransfer"            : "🗑️ LAB Color Transfer",
+    "FG_LineworkComposite"           : "🗑️ Linework Composite",
     "FG_LoadImage"                   : "🗑️ Load Image",
     "FG_Minimum_Maximum"             : "🗑️ Minimum + Maximum",
-    "FG_ModelImageScaler"            : "🗑️ Image Scale with Model",
     "FG_ModelReferenceLatentMethod"  : "🗑️ Edit Model Reference Method",
     "FG_PurgeMemory"                 : "🗑️ Purge Memory",
     "FG_SaveImage"                   : "🗑️ Save Image",
@@ -142,15 +148,14 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FG_UnifiedModelsLoader"         : "🗑️ Unified Models Loader",
     "FG_XPUGuard"                    : "🗑️ XPU Guard (Device Health)",
 
-    "AnimaConditioningRegion"            : "⚙️ Anima Conditioning Region",
-    "ApplyAnimaRegionalConditioningPatch": "⚙️ Anima Apply Anima Regional Conditioning Patch",
-    "AnimaLLLiteApply"                   : "⚙️ Anima Apply Anima ControlNet-LLLite",
-    "ApplyCosmosReferenceLatent"         : "⚙️ Anima Apply Cosmos Reference Latent",
+    "AnimaIPAdapterLoader"   : "🗑️ Anima IP-Adapter Loader",
+    "AnimaIPAdapterApply"    : "🗑️ Anima IP-Adapter Apply",
+    "AnimaIPAdapterVisualize": "🗑️ Anima IP Adapter Visualizer",
+    "AnimaSiglipeEncodeImage": "🗑️ Anima SigLIP2 Encode Image",
 
-    "AnimaIPAdapterLoader"   : "⚙️ Anima IP-Adapter Loader",
-    "AnimaIPAdapterApply"    : "⚙️ Anima IP-Adapter Apply",
-    "AnimaSiglipeEncodeImage": "⚙️ Anima SigLIP2 Encode Image",
-    "AnimaImageEmbLoader"    : "⚙️ Anima Image Embedding Loader (Legacy)",
+    "AnimaConditioningRegion"            : "⚙️ Anima Conditioning Region",
+    "AnimaLLLiteApply"                   : "⚙️ Anima Apply Anima ControlNet-LLLite",
+    "ApplyAnimaRegionalConditioningPatch": "⚙️ Anima Apply Anima Regional Conditioning Patch",
 
     "MultiLatentComposite":  "⚙️ Multi Latent Composite",
     "MultiAreaConditioning": "⚙️ Multi Area Conditioning",
@@ -170,4 +175,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "MiniMaxH3AutoChainAudio":             "⚙️ H3 Auto Chain Audio",
     "MiniMaxH3AutoChain":                  "⚙️ H3 Auto Chain + Stitch",
     "MiniMaxH3AutoChainFrameReference":    "⚙️ H3 Auto Chain Frame Reference",
+
 }
+

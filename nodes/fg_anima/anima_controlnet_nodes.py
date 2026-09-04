@@ -672,7 +672,7 @@ class AnimaLLLiteApply:
 
     RETURN_TYPES = ("MODEL",)
     FUNCTION = "apply"
-    CATEGORY = "loaders"
+    CATEGORY = "Farrenzo's Garbage/Anima"
 
     def apply(self, model, lllite_name, image, strength, start_percent, end_percent,
               preserve_wrapper=True, mask=None):

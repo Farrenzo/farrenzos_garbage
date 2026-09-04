@@ -78,7 +78,7 @@ class FG_WD14Tagger:
     )
     RETURN_NAMES = ("Tags", "Scored Tags", "Organized Prompt", )
     FUNCTION = "tag_image"
-    CATEGORY = "Farrenzo's Garbage/Image/Tag Analysis"
+    CATEGORY = "Farrenzo's Garbage/Image/Utils"
     DESCRIPTION = "Loads a tagging model. Typically WD14."
 
     def _load_model(self, model_key: str):

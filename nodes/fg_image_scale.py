@@ -77,7 +77,7 @@ class FG_ImageScaler:
     RETURN_TYPES = ("IMAGE", "MASK", "LATENT", "INT", "INT",)
     RETURN_NAMES = ("Image", "Mask", "Latent", "Width", "Height",)
     FUNCTION = "scale_image"
-    CATEGORY = "Farrenzo's Garbage/Utils"
+    CATEGORY = "Farrenzo's Garbage/Image/Utils"
 
     def _calculate_WH(self, width, height, multiple=8, rounding=True): ## newly rounded width & height
         if rounding:

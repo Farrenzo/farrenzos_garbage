@@ -228,7 +228,7 @@ class FG_MiniMaxH3_Conditioner(io.ComfyNode):
         return io.Schema(
             node_id="FG_MiniMaxH3_Conditioner",
             display_name="MiniMax H3 Conditioner (Unified)",
-            category="Farrenzo's Garbage/video",
+            category="Farrenzo's Garbage/Video",
             description="Unified <Picture i> / <Video k> / <Audio j> conditioning for "
                         "MiniMax H3. Keyframes and references in one node. Use the same "
                         "tags when prompting.",

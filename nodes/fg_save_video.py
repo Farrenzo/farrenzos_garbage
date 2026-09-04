@@ -122,7 +122,7 @@ class FG_SaveVideo:
     RETURN_NAMES = ("video",)
     FUNCTION = "save_video"
     OUTPUT_NODE = True
-    CATEGORY = "Farrenzo's Garbage/video"
+    CATEGORY = "Farrenzo's Garbage/Video"
     DESCRIPTION = "Saves a video with a clean timestamped filename, as MP4 or WebM."
 
     # ------------------------------------------------------------------

@@ -56,7 +56,7 @@ class FG_ModelImageScaler:
     RETURN_TYPES = ("LATENT", )
     RETURN_NAMES = ("Latent", )
     FUNCTION = "scale_with_model"
-    CATEGORY = "Farrenzo's Garbage/Utils"
+    CATEGORY = "Farrenzo's Garbage/Image/Utils"
 
     def _load_model(self, model_path):
         if hasattr(self, '_cached_model_path') and self._cached_model_path == model_path:

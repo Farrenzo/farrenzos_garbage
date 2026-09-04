@@ -8,19 +8,19 @@ from comfy.model_base import Anima
 from comfy.model_patcher import ModelPatcher
 from comfy_api.latest import io
 
-MAX_REF_LATENTS = 1
+MAX_REF_LATENTS = 3
 COND_REF_LATENTS_KEY = "ref_latents"
 TEMPORAL_REFERENCE_WRAPPER_KEY = "cosmos_temporal_reference"
 
 
-class ApplyCosmosReferenceLatent(io.ComfyNode):
+class FG_ApplyCosmosReferenceLatent(io.ComfyNode):
     @classmethod
     def define_schema(cls) -> io.Schema:
         return io.Schema(
-            node_id="ApplyCosmosReferenceLatent",
+            node_id="FG_ApplyCosmosReferenceLatent",
             search_aliases=["cosmos reference", "anima reference"],
             display_name="Apply Cosmos Reference Latent",
-            category="conditioning",
+            category="Farrenzo's Garbage/Anima/Conditioning",
             inputs=[
                 io.Model.Input("model"),
                 io.Autogrow.Input(

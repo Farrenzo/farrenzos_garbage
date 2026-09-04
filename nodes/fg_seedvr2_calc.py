@@ -39,7 +39,7 @@ class FG_SeedVR2CalculatorNode:
         "eta_formatted",
     )
     FUNCTION = "calculate"
-    CATEGORY = "SeedVR2/Utils"
+    CATEGORY = "Farrenzo's Garbage/Utils"
 
     def calculate(
         self,

@@ -167,7 +167,7 @@ class SCAIL2EasyConfig:
     RETURN_TYPES = ("INT", "INT", "INT", "INT", "INT", "FLOAT", "INT", "BOOLEAN", "STRING")
     RETURN_NAMES = ("frames", "fps", "width", "height", "steps", "cfg", "seed", "replace_mode", "object_indices")
     FUNCTION = "go"
-    CATEGORY = "SCAIL-2"
+    CATEGORY = "Farrenzo's Garbage/Video"
     DESCRIPTION = (
         "One node that controls every SCAIL-2 parameter. Outputs frames (= seconds x fps), "
         "fps, width, height, steps, cfg, seed, replace_mode and object_indices. "
@@ -248,7 +248,7 @@ class SCAIL2AutoVideo:
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("images",)
     FUNCTION = "go"
-    CATEGORY = "SCAIL-2"
+    CATEGORY = "Farrenzo's Garbage/Video"
     DESCRIPTION = (
         "Runs the SCAIL-2 extend chain in a loop, generating exactly the number of "
         "segments needed for the requested frame count. 10 s -> 3 segments, 30 s -> 7, "
@@ -413,7 +413,7 @@ class SCAIL2RunInfo:
                     "positive", "negative", "replace_mode", "object_indices",
                     "driving_video", "reference_image", "file", "message")
     FUNCTION = "go"
-    CATEGORY = "SCAIL-2"
+    CATEGORY = "Farrenzo's Garbage/Video"
     DESCRIPTION = (
         "Read a ComfyUI output (mp4/webm/png/jpg/webp) and extract all recoverable run "
         "info from its embedded metadata: seed, frames, fps, resolution, steps, cfg, "

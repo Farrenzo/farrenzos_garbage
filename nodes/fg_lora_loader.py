@@ -46,7 +46,7 @@ class FG_LoraLoader:
     RETURN_TYPES = ("MODEL", "CLIP")
     RETURN_NAMES = ("Model", "Clip")
     FUNCTION = "load_loras"
-    CATEGORY = "Farrenzo's Garbage/Loaders"
+    CATEGORY = "Farrenzo's Garbage/Model Loaders"
     DESCRIPTION = global_description
 
     def load_loras(self, model, clip=None, **kwargs):

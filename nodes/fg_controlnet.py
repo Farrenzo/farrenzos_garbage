@@ -39,7 +39,7 @@ class FG_ApplyControlNet:
 
     RETURN_TYPES = ("CONDITIONING","CONDITIONING", "LATENT")
     RETURN_NAMES = ("Positive +", "Negative -", "Latent Noise Mask", )
-    CATEGORY = "Farrenzo's Garbage/controlnet"
+    CATEGORY = "Farrenzo's Garbage/Controlnet"
     FUNCTION = "apply_controlnet"
     SEARCH_ALIASES = ["controlnet", "apply controlnet", "use controlnet", "control net"]
     DESCRIPTION = "ControlNet Integrated Loader & Applicator."

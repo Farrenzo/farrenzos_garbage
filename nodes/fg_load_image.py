@@ -19,12 +19,34 @@ Loads an image, outputs the image, image mask, width & height.
 """
 
 import os
+import json
 import torch
 import hashlib
 import numpy as np
 import folder_paths
 import node_helpers
 from PIL import Image, ImageOps, ImageSequence
+
+
+def _parse_crop(crop, width, height):
+    """Return (x0, y0, x1, y1) pixel box, or None for full image."""
+    if not crop:
+        return None
+    try:
+        data = json.loads(crop)
+        x = float(data["x"])
+        y = float(data["y"])
+        w = float(data["w"])
+        h = float(data["h"])
+    except (ValueError, KeyError, TypeError):
+        return None
+    x0 = max(0, min(width - 1, round(x * width)))
+    y0 = max(0, min(height - 1, round(y * height)))
+    x1 = max(x0 + 1, min(width, round((x + w) * width)))
+    y1 = max(y0 + 1, min(height, round((y + h) * height)))
+    if x0 == 0 and y0 == 0 and x1 == width and y1 == height:
+        return None
+    return (x0, y0, x1, y1)
 
 
 class FG_LoadImage:
@@ -38,15 +60,15 @@ class FG_LoadImage:
         files = folder_paths.filter_files_content_types(files, ["image"])
         return {
             "required": {
-                    "image": (sorted(files), {"image_upload": True, "tooltip": "The image you want uploaded."})
+                    "image": (sorted(files), {"image_upload": True, "tooltip": "The image you want uploaded."}),
+                    "crop": ("STRING", {"default": "", "tooltip": "Managed by the crop editor on the node — no need to edit by hand.",}),
                 },
         }
-
 
     RETURN_TYPES = ("IMAGE", "MASK", "INT", "INT")
     RETURN_NAMES = ("Image", "Mask", "Width", "Height")
     FUNCTION = "load_image"
-    CATEGORY = "Farrenzo's Garbage/Utils"
+    CATEGORY = "Farrenzo's Garbage/Image"
     DESCRIPTION = "Load an image from disk, but also get the width and height for it as well."
 
     @staticmethod
@@ -55,12 +77,12 @@ class FG_LoadImage:
             return image
         return folder_paths.get_annotated_filepath(image)
 
-    def load_image(self, image):
+    def load_image(self, image, crop=""):
         image_path = self._resolve_path(image)
         img = node_helpers.pillow(Image.open, image_path)
 
         output_images = []
-        output_masks = []
+        output_masks  = []
         w, h = None, None
 
         for i in ImageSequence.Iterator(img):
@@ -70,10 +92,8 @@ class FG_LoadImage:
                 i = i.point(lambda i: i * (1 / 255))
 
             image_rgb = i.convert("RGB")
-
             if len(output_images) == 0:
                 w, h = image_rgb.size
-
             if image_rgb.size != (w, h):
                 continue
 
@@ -101,11 +121,16 @@ class FG_LoadImage:
         else:
             output_image = output_images[0]
             output_mask = output_masks[0]
+            box = _parse_crop(crop, output_image.shape[2], output_image.shape[1])
+            if box is not None:
+                x0, y0, x1, y1 = box
+                output_image = output_image[:, y0:y1, x0:x1, :]
+                output_mask = output_mask[:, y0:y1, x0:x1]
 
         return (output_image, output_mask, w, h)
 
     @classmethod
-    def IS_CHANGED(s, image):
+    def IS_CHANGED(s, image, crop=""):
         image_path = s._resolve_path(image)
         m = hashlib.sha256()
         with open(image_path, 'rb') as f:
@@ -113,7 +138,7 @@ class FG_LoadImage:
         return m.digest().hex()
 
     @classmethod
-    def VALIDATE_INPUTS(s, image):
+    def VALIDATE_INPUTS(s, image, crop=""):
         if os.path.isabs(image):
             if not os.path.isfile(image):
                 return f"Invalid image file: {image}"

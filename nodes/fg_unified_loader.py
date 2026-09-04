@@ -31,7 +31,7 @@ class FG_UnifiedModelsLoader:
     RETURN_TYPES = ("MODEL", "CLIP", "VAE")
     RETURN_NAMES = ("model", "clip", "vae")
     FUNCTION = "load_models"
-    CATEGORY = "Farrenzo's Garbage/Loaders"
+    CATEGORY = "Farrenzo's Garbage/Model Loaders"
     DESCRIPTION = "Unified loader for comfy. Tired of using three nodes to do this."
 
     def load_models(self, unet_name, unet_weight_dtype, clip_name, clip_type, clip_device, vae_name):

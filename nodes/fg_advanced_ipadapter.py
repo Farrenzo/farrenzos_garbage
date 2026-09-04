@@ -9,7 +9,7 @@ import folder_paths
 import comfy.clip_vision as c_visiz
 import comfy.utils       as c_utils
 import comfy.comfy_types as c_types
-from _fg_helperfunctions import clear_memory
+from ._fg_helperfunctions import clear_memory
 
 WEIGHT_TYPES = [
     "linear",
@@ -43,7 +43,7 @@ class FG_ApplyIPAdapter:
     RETURN_NAMES = ("Model")
     OUTPUT_TOOLTIPS = ("The adapted weighted model.",)
     FUNCTION = "apply_ip_adapter"
-    CATEGORY = "Farrenzo's Garbage/Sampling"
+    CATEGORY = "Farrenzo's Garbage/IP Adapter/SDXL"
     DESCRIPTION = "global_description"
     SEARCH_ALIASES = []
 
@@ -325,7 +325,6 @@ class IPAdapter(nn.Module):
         image_prompt_embeds = torch.cat(image_prompt_embeds, dim=0)
         uncond_image_prompt_embeds = torch.cat(uncond_image_prompt_embeds, dim=0)
 
-        #torch.cuda.empty_cache()
         clear_memory(purge_cache=True)
 
         #image_prompt_embeds = self.image_proj_model(clip_embed)
@@ -352,7 +351,6 @@ class IPAdapter(nn.Module):
 
         embeds = torch.cat(embeds, dim=0)
         del face_embed_batch, clip_embed_batch
-        #torch.cuda.empty_cache()
         clear_memory(purge_cache=True)
 
         #embeds = self.image_proj_model(face_embed, clip_embed, scale=s_scale, shortcut=shortcut)

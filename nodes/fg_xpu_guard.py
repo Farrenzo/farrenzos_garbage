@@ -139,7 +139,7 @@ class FG_XPUGuard:
     RETURN_TYPES = (ANY, "STRING")
     RETURN_NAMES = ("passthrough", "status")
     FUNCTION = "run"
-    CATEGORY = "Farrenzo's Garbage/system"
+    CATEGORY = "Farrenzo's Garbage/Utils/System"
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):

@@ -19,7 +19,7 @@ class MultiAreaConditioning:
     RETURN_TYPES = ("CONDITIONING", "INT", "INT")
     RETURN_NAMES = (None, "resolutionX", "resolutionY")
     FUNCTION = "doStuff"
-    CATEGORY = "Davemane42"
+    CATEGORY = "Farrenzo's Garbage/Conditioning"
 
     def doStuff(self, extra_pnginfo, unique_id, **kwargs):
 
@@ -85,8 +85,7 @@ class ConditioningUpscale():
         }
     
     RETURN_TYPES = ("CONDITIONING",)
-    CATEGORY = "Davemane42"
-
+    CATEGORY = "Farrenzo's Garbage/Conditioning"
     FUNCTION = 'upscale'
 
     def upscale(self, conditioning, scalar):
@@ -120,8 +119,7 @@ class ConditioningStretch():
         }
     
     RETURN_TYPES = ("CONDITIONING",)
-    CATEGORY = "Davemane42"
-
+    CATEGORY = "Farrenzo's Garbage/Conditioning"
     FUNCTION = 'upscale'
 
     def upscale(self, conditioning, resolutionX, resolutionY, newWidth, newHeight, scalar=1):
@@ -160,10 +158,8 @@ class ConditioningDebug():
     
     RETURN_TYPES = ()
     FUNCTION = "debug"
-
+    CATEGORY = "Farrenzo's Garbage/Conditioning"
     OUTPUT_NODE = True
-
-    CATEGORY = "Davemane42"
 
     def debug(self, conditioning):
         print("\nDebug")
@@ -189,8 +185,7 @@ class MultiLatentComposite:
         }
     RETURN_TYPES = ("LATENT",)
     FUNCTION = "composite"
-
-    CATEGORY = "Davemane42"
+    CATEGORY = "Farrenzo's Garbage/Conditioning"
 
     def composite(self, samples_to, extra_pnginfo, unique_id, **kwargs):
 

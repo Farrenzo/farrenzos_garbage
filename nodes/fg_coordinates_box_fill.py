@@ -48,7 +48,7 @@ class FG_CoordinatesBoxFill:
         }
 
     FUNCTION = "fill_image_with_color"
-    CATEGORY = "Farrenzo's Garbage/Utils"
+    CATEGORY = "Farrenzo's Garbage/Image/Utils"
     RETURN_TYPES = ("IMAGE", "MASK",)
     RETURN_NAMES = ("IMAGE", "MASK",)
 

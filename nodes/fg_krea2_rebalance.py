@@ -191,7 +191,7 @@ class ConditioningKrea2Rebalance:
     RETURN_TYPES = ("CONDITIONING",)
     RETURN_NAMES = ("conditioning",)
     FUNCTION = "rebalance"
-    CATEGORY = "conditioning/Krea2"
+    CATEGORY = "Farrenzo's Garbage/Conditioning"
     DESCRIPTION = "Rebalance Krea 2's multi-layer text conditioning per tap, then apply a global gain."
 
     def rebalance(

@@ -1021,7 +1021,7 @@ class MiniMaxH3MotionContextLoadLatent:
 
     RETURN_TYPES = ("LATENT",)
     FUNCTION = "load"
-    CATEGORY = "conditioning/minimax"
+    CATEGORY = "Farrenzo's Garbage/Conditioning"
     DESCRIPTION = ("Load a latent saved by H3 Motion Context Save Latent, "
                    "for the context_latent input only.")
 

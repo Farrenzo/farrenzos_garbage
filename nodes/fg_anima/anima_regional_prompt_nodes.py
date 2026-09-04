@@ -30,7 +30,7 @@ class AnimaConditioningRegion:
     RETURN_TYPES = (REGION_TYPE,)
     RETURN_NAMES = ("regions",)
     FUNCTION = "create"
-    CATEGORY = "conditioning/Anima Regional Conditioning"
+    CATEGORY = "Farrenzo's Garbage/Anima/Conditioning"
 
     def create(self, mask, conditioning, weight, regions=None):
         return (
@@ -90,7 +90,7 @@ class ApplyAnimaRegionalConditioningPatch:
     RETURN_TYPES = ("MODEL",)
     RETURN_NAMES = ("patched_model",)
     FUNCTION = "apply"
-    CATEGORY = "conditioning/Anima Regional Conditioning"
+    CATEGORY = "Farrenzo's Garbage/Anima/Conditioning"
 
     def apply(
         self,

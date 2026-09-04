@@ -57,7 +57,7 @@ class FG_LABColorTransfer:
     def __init__(self):
         self.NODE_NAME = "LAB Color Transfer"
 
-    CATEGORY = "Farrenzo's Garbage/Image"
+    CATEGORY = "Farrenzo's Garbage/Image/Utils"
     FUNCTION = "transfer"
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("Image",)
