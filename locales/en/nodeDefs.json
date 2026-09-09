@@ -136,40 +136,56 @@
 				"tooltip":"(Optional) Variational AutoEncoder: Used for encoding the image and mask into a latent."
 			},
 			"grow_mask_by":{
-				"name":"Mask Growth Value",
-				"tooltip":""
+				"name":"🪴 Mask Growth Value",
+				"tooltip":"How much extra room the mask occupies."
 			},
 			"fit":{
 				"name":"↕️ Fit",
 				"tooltip":"How to scale the image."
 			},
+			"scaling_method":{
+				"name":"🪄 Scaling Method",
+				"tooltip":"Choose your best method."
+			},
+			"base_model":{
+				"name":"🧮 Base Model",
+				"tooltip":"Default is SDXL but for an empty latent, you need to pick FLUX for FLUX models as they produce 16 channel empty latents."
+			},
+			"enable_round_to_multiple":{
+				"name":"🔘 Round To Multiple",
+				"tooltip":"What to base your scaled image dimesnions on."
+			},
 			"rounding":{
 				"name":"🔄 Rounding",
 				"tooltip":"Round up or down"
 			},
-			"scaling_method":{
-				"name":"🔀 Scaling Method",
-				"tooltip":"Choose your best method."
-			},
 			"round_to_multiple":{
 				"name":"Ⓜ️ Rounding Multiple",
 				"tooltip":"What to base your scaled image dimesnions on."
+			},
+			"enable_scale_to_megapixels":{
+				"name":"🔘 Scale to Megapixels",
+				"tooltip":"Scale to a pixel budget while keeping the aspect ratio."
+			},
+			"megapixels":{
+				"name":"🇲🇵 Megapixels",
+				"tooltip":"📐 Target megapixels (1 MP = 1024×1024)."
+			},
+			"resolution_steps":{
+				"name":"📏 Resolution",
+				"tooltip":"📏 Snap the result to multiples of this. 1 = no snapping."
+			},
+			"enable_manual_size":{
+				"name":"🔘 Width*Height",
+				"tooltip":"🔘 Scale to exact numbers. Turning this on turns the other two switches off."
 			},
 			"desired_width":{
 				"name":"📐 Desired Width",
 				"tooltip":"Enter if you want to keep exact dimensions."
 			},
 			"desired_height":{
-				"name":"📏 Height",
+				"name":"📏 Desired Height",
 				"tooltip":"Enter if you want to keep exact dimensions."
-			},
-			"background_color":{
-				"name":"🎨 Background Color",
-				"tooltip":"For scaling, the background ... "
-			},
-			"base_model":{
-				"name":"🧮 Base Model",
-				"tooltip":"Default is SDXL but for an empty latent, you need to pick FLUX for FLUX models as they produce 16 channel empty latents."
 			}
 		},
 		"outputs":{

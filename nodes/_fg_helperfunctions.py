@@ -240,27 +240,44 @@ def purge_backend(name, mod, device):
             handle.__exit__(None, None, None)
 
 
-def clear_memory(purge_cache: bool = False, purge_models: bool = False, keep: float = 0.2):
+def clear_memory(purge_cache: bool = False, purge_models: bool = False, keep: float = 0.2, nuclear: bool = False):
     """
-    keep: fraction of total VRAM to leave loaded (0.2 == the old 0.8 free target).
+    keep:    fraction of total VRAM to leave loaded (0.2 == the old 0.8 free target).
+             Ignored when nuclear=True.
+    nuclear: request an absurdly large free_memory target (1e30) instead of a
+             fraction of total VRAM. ComfyUI's free_memory(small_or_zero, device)
+             is effectively a no-op for reclaim on some backends/versions — it
+             marks weights as evictable but leaves their .data resident. Asking
+             for far more than could ever be needed forces the memory manager to
+             evict everything it possibly can rather than leaving weights
+             "soft-unloaded" but still occupying VRAM. Use this for an explicit
+             "empty the card" call; use the plain keep-based version for routine
+             headroom management where leaving some models warm is fine.
+
+    Order matters: models are unloaded BEFORE the cache/backend purge runs, so
+    their tensors are already dereferenced by the time empty_cache/free_memory
+    are asked to reclaim anything. Purging cache first (the old order) could
+    run while model params were still registered as loaded.
     """
+    if purge_models:
+        comfy.model_management.unload_all_models()
+
     if purge_cache:
         gc.collect()
         for name, mod in get_accelerators():
             for device in get_devices(name, mod):
                 try:
-                    comfy.model_management.free_memory(
-                        comfy.model_management.get_total_memory(device) * (1.0 - keep),
-                        device,
+                    target = 1e30 if nuclear else (
+                        comfy.model_management.get_total_memory(device) * (1.0 - keep)
                     )
+                    comfy.model_management.free_memory(target, device)
                 except Exception as e:
-                    log(f"⚠️ free_memory failed on {device}: {e}")
+                    log(f"⚠️ free_memory failed on {device}: {e}", message_type="warning")
                 purge_backend(name, mod, device)
+        gc.collect()
 
-    if purge_models:
-        comfy.model_management.unload_all_models()
+    log(f"👝 Memory purged{' (nuclear)' if nuclear else ''}.", message_type="finish")
 
-    log(f"👝 Memory purged.")
 # ----------------------------------------
 # NEW ↑
 # ----------------------------------------

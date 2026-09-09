@@ -13,7 +13,7 @@ from .fg_load_vae             import FG_LatentTransfer
 from .fg_lora_loader          import FG_LoraLoader
 from .fg_min_max              import FG_MinimumMaximum
 from .fg_model_reference      import FG_ModelReferenceLatentMethod
-from .fg_purge_vram           import FG_PurgeMemory
+from .fg_purge_memory         import FG_PurgeMemory
 from .fg_save_image           import FG_SaveImage
 from .fg_save_video           import FG_SaveVideo
 from .fg_show_text            import FG_ShowText
@@ -23,8 +23,12 @@ from .fg_WD14                 import FG_WD14Tagger
 from .fg_xpu_guard            import FG_XPUGuard
 from .fg_unified_loader       import FG_UnifiedModelsLoader
 from .fg_linework_composite   import FG_LineworkComposite
+from .fg_hue_correct          import FG_HueCorrect
+from .fg_image_forensics      import FG_ImageForensics
+from .fg_conditioning_cache   import FG_SaveConditioningLatent, FG_LoadConditioningLatent
 
-from .fg_anima.anima_controlnet_nodes import AnimaLLLiteApply
+from .fg_anima.anima_lllite_inspect import FG_LLLiteCondPreview
+from .fg_anima.anima_controlnet_nodes import FG_AnimaLLLiteApply
 from .fg_anima.anima_regional_prompt_nodes import AnimaConditioningRegion, ApplyAnimaRegionalConditioningPatch
 from .fg_anima.anima_ipadapter_nodes import (
     AnimaIPAdapterLoader,
@@ -61,6 +65,15 @@ MiniMaxH3AutoChainFrameReference,
 )
 from .fg_minimax.fg_minimax_h3 import FG_MiniMaxH3_Conditioner
 
+from .fg_gguf.fg_gguf_nodes import (
+    UnetLoaderGGUF,
+    CLIPLoaderGGUF,
+    DualCLIPLoaderGGUF,
+    TripleCLIPLoaderGGUF,
+    QuadrupleCLIPLoaderGGUF,
+    UnetLoaderGGUFAdvanced,
+)
+
 NODE_CLASS_MAPPINGS = {
     "FG_Advanced_KSampler"           : FG_Advanced_KSampler,
     "FG_ApplyControlNet"             : FG_ApplyControlNet,
@@ -88,9 +101,10 @@ NODE_CLASS_MAPPINGS = {
     "FG_LineworkComposite"           : FG_LineworkComposite,
 
     # Experimental Anima nodes
-    "AnimaConditioningRegion": AnimaConditioningRegion,
+    "FG_AnimaLLLiteApply"                : FG_AnimaLLLiteApply,
+    "FG_LLLiteCondPreview"               : FG_LLLiteCondPreview,
+    "AnimaConditioningRegion"            : AnimaConditioningRegion,
     "ApplyAnimaRegionalConditioningPatch": ApplyAnimaRegionalConditioningPatch,
-    "AnimaLLLiteApply": AnimaLLLiteApply,
 
     "AnimaIPAdapterLoader":    AnimaIPAdapterLoader,
     "AnimaIPAdapterApply":     AnimaIPAdapterApply,
@@ -118,6 +132,17 @@ NODE_CLASS_MAPPINGS = {
     "MiniMaxH3AutoChainAudio":             MiniMaxH3AutoChainAudio,
     "MiniMaxH3AutoChain":                  MiniMaxH3AutoChain,
     "MiniMaxH3AutoChainFrameReference":    MiniMaxH3AutoChainFrameReference,
+
+    "UnetLoaderGGUF": UnetLoaderGGUF,
+    "CLIPLoaderGGUF": CLIPLoaderGGUF,
+    "DualCLIPLoaderGGUF": DualCLIPLoaderGGUF,
+    "TripleCLIPLoaderGGUF": TripleCLIPLoaderGGUF,
+    "QuadrupleCLIPLoaderGGUF": QuadrupleCLIPLoaderGGUF,
+    "UnetLoaderGGUFAdvanced": UnetLoaderGGUFAdvanced,
+    "FG_SaveConditioning": FG_SaveConditioningLatent,
+    "FG_LoadConditioning": FG_LoadConditioningLatent,
+    "FG_HueCorrect": FG_HueCorrect,
+    "FG_ImageForensics": FG_ImageForensics,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -147,15 +172,18 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FG_MiniMaxH3_Conditioner"       : "🗑️ MiniMax H3 Conditioner",
     "FG_UnifiedModelsLoader"         : "🗑️ Unified Models Loader",
     "FG_XPUGuard"                    : "🗑️ XPU Guard (Device Health)",
+    "FG_SaveConditioning"            : "🗑️ Save Conditioning To Disk",
+    "FG_LoadConditioning"            : "🗑️ Load Conditioning From Disk",
 
-    "AnimaIPAdapterLoader"   : "🗑️ Anima IP-Adapter Loader",
     "AnimaIPAdapterApply"    : "🗑️ Anima IP-Adapter Apply",
+    "AnimaIPAdapterLoader"   : "🗑️ Anima IP-Adapter Loader",
     "AnimaIPAdapterVisualize": "🗑️ Anima IP Adapter Visualizer",
     "AnimaSiglipeEncodeImage": "🗑️ Anima SigLIP2 Encode Image",
 
-    "AnimaConditioningRegion"            : "⚙️ Anima Conditioning Region",
-    "AnimaLLLiteApply"                   : "⚙️ Anima Apply Anima ControlNet-LLLite",
-    "ApplyAnimaRegionalConditioningPatch": "⚙️ Anima Apply Anima Regional Conditioning Patch",
+    "AnimaConditioningRegion"            : "⚙️ Anima Regional Conditioning",
+    "FG_AnimaLLLiteApply"                : "⚙️ Anima Apply ControlNet-LLLite",
+    "FG_LLLiteCondPreview"               : "⚙️ LLLite Cond Preview",
+    "ApplyAnimaRegionalConditioningPatch": "⚙️ Anima Apply Regional Conditioning Patch",
 
     "MultiLatentComposite":  "⚙️ Multi Latent Composite",
     "MultiAreaConditioning": "⚙️ Multi Area Conditioning",
@@ -176,5 +204,14 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "MiniMaxH3AutoChain":                  "⚙️ H3 Auto Chain + Stitch",
     "MiniMaxH3AutoChainFrameReference":    "⚙️ H3 Auto Chain Frame Reference",
 
-}
+    "UnetLoaderGGUF"          : "🎛️ UnetLoaderGGUF",
+    "CLIPLoaderGGUF"          : "🎛️ CLIPLoaderGGUF",
+    "DualCLIPLoaderGGUF"      : "🎛️ DualCLIPLoaderGGUF",
+    "TripleCLIPLoaderGGUF"    : "🎛️ TripleCLIPLoaderGGUF",
+    "QuadrupleCLIPLoaderGGUF" : "🎛️ QuadrupleCLIPLoaderGGUF",
+    "UnetLoaderGGUFAdvanced"  : "🎛️ UnetLoaderGGUFAdvanced",
+    "FG_HueCorrect": "🗑️ Hue Correct (LAB)",
+    "FG_ImageForensics": "🗑️ Image Forensics",
 
+
+}

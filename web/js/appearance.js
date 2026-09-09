@@ -8,6 +8,7 @@ app.registerExtension({
     async loadedGraphNode(node) {
         const garbage_nodes = [
             "FG_Advanced_KSampler",
+            "FG_ApplyCosmosReferenceLatent",
             "FG_ApplyControlNet",
             "FG_BoxFillwCoordinates",
             "FG_CLIPTextEncode",
@@ -31,16 +32,18 @@ app.registerExtension({
             "FG_MiniMaxH3_Conditioner",
             "FG_XPUGuard",
             "FG_UnifiedModelsLoader",
-
             "FG_XPUGuard",
+
+            "FG_AnimaLLLiteApply",
+            "FG_LLLiteCondPreview",
             "AnimaConditioningRegion",
             "ApplyAnimaRegionalConditioningPatch",
-            "AnimaLLLiteApply",
 
             "AnimaIPAdapterLoader",
             "AnimaIPAdapterApply",
             "AnimaSiglipeEncodeImage",
             "AnimaImageEmbLoader",
+            "AnimaIPAdapterVisualize",
 
             "MultiLatentComposite",
             "MultiAreaConditioning",

@@ -203,8 +203,8 @@ tag_id,name,human_category,category,count,wd14index,ticks
 375002,white_thighhighs,09_CLOTHING,0,177995,202,1
 13199,black_eyes,08_ANATOMY,0,177620,203,1
 413564,two-tone_hair,08_ANATOMY,0,177573,204,1
-590165,english_text,11_PROMPT,0,176369,205,1
-440465,speech_bubble,11_PROMPT,0,174933,206,1
+590165,english_text,02_COMPOSITION,0,176369,205,1
+440465,speech_bubble,02_COMPOSITION,0,174933,206,1
 719985,streaked_hair,08_ANATOMY,0,174249,207,1
 3796,bra,09_CLOTHING,0,174110,208,1
 261,yuri,11_PROMPT,0,173747,209,1
@@ -863,7 +863,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 491112,cowgirl_position,08_ANATOMY,0,33035,862,1
 406964,floating,09_CLOTHING,0,33019,863,1
 664922,dragon_horns,04_PEOPLE,0,32766,864,1
-459933,drinking_glass,09_CLOTHING,0,32765,865,1
+459933,drinking_glass,10_PROPS,0,32765,865,1
 571690,hair_scrunchie,08_ANATOMY,0,32756,866,1
 549356,arm_at_side,06_POSE,0,32752,867,1
 491758,sleeves_rolled_up,08_ANATOMY,0,32731,868,1
@@ -1085,7 +1085,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 872616,white_kimono,09_CLOTHING,0,24858,1084,1
 374921,sports_bra,09_CLOTHING,0,24758,1085,2
 1441886,under-rim_eyewear,08_ANATOMY,0,24748,1086,2
-578153,drinking_straw,11_PROMPT,0,24736,1087,2
+578153,drinking_straw,10_PROPS,0,24736,1087,2
 477439,white_wings,09_CLOTHING,0,24678,1088,2
 617355,grey_jacket,09_CLOTHING,0,24674,1089,2
 580379,aged_up,11_PROMPT,0,24592,1090,1
@@ -1474,7 +1474,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 9586,habit,11_PROMPT,0,16109,1473,2
 453768,fairy_wings,08_ANATOMY,0,16092,1474,2
 610524,star-shaped_pupils,08_ANATOMY,0,16027,1475,2
-149791,drinking,11_PROMPT,0,16012,1476,2
+149791,drinking,06_POSE,0,16012,1476,2
 1618371,body_fur,08_ANATOMY,0,16011,1477,2
 1862786,reaching_towards_viewer,06_POSE,0,15994,1478,2
 653480,yellow_jacket,09_CLOTHING,0,15984,1479,2
@@ -6832,7 +6832,7 @@ tag_id,name,human_category,category,count,wd14index,ticks
 419685,invisible_man,02_COMPOSITION,0,959,6831,2
 592592,personality_switch,04_PEOPLE,0,959,6832,2
 1413251,fur-trimmed_collar,08_ANATOMY,0,959,6833,2
-678477,shared_speech_bubble,07_EXPRESSIONS,0,958,6834,2
+678477,shared_speech_bubble,02_COMPOSITION,0,958,6834,2
 5547,pet,04_PEOPLE,0,958,6835,2
 1684568,paint_splatter_on_face,08_ANATOMY,0,958,6836,2
 1310659,hands_on_another's_thighs,06_POSE,0,958,6837,1

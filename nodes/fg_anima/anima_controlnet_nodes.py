@@ -31,6 +31,7 @@ from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from .._fg_helperfunctions import log, MODEL_TYPES, tensor2pil, generate_latent_image_data
 
 logger = logging.getLogger(__name__)
 
@@ -650,7 +651,10 @@ def _build_inpaint_cond_image(rgb_pm1: torch.Tensor, mask01: torch.Tensor,
     return torch.cat([rgb_pm1, mask_pm1], dim=1)
 
 
-class AnimaLLLiteApply:
+class FG_AnimaLLLiteApply:
+    def __init__(self):
+        self.NODE_NAME = "Apply Advanced Anima ControlNet"
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -667,15 +671,34 @@ class AnimaLLLiteApply:
                 # Required when the loaded weights are 4ch (inpaint). White = inpaint area,
                 # black = keep. Mismatch with the weights' cond_in_channels is reported below.
                 "mask": ("MASK",),
+                "vae": ("VAE", ),
+                "base_model" : (list(MODEL_TYPES.keys()), {"default": "SDXL", "tooltip": "For an empty latent, SDXL & FLUX are different."}),
+                "grow_mask_by": ("INT", {"default": 6, "min": 0, "max": 64, "step": 1}),
             },
         }
 
-    RETURN_TYPES = ("MODEL",)
+    RETURN_TYPES = ("MODEL", "LATENT")
     FUNCTION = "apply"
-    CATEGORY = "Farrenzo's Garbage/Anima"
+    CATEGORY = "Farrenzo's Garbage/Controlnet/Anima"
 
-    def apply(self, model, lllite_name, image, strength, start_percent, end_percent,
-              preserve_wrapper=True, mask=None):
+    def apply(
+        self,
+        model,
+        lllite_name,
+        image,
+        strength,
+        start_percent,
+        end_percent,
+        mask             = None,
+        base_model       = "SDXL",
+        grow_mask_by     = 6,
+        vae              = None,
+        preserve_wrapper = True,
+    ):
+        if strength == 0:
+            log(f"{self.NODE_NAME}: Controlnet with strength of zero not applied.")
+            return (model, )
+
         weights_path = folder_paths.get_full_path("controlnet", lllite_name)
         if weights_path is None or not os.path.isfile(weights_path):
             raise FileNotFoundError(f"LLLite weights not found: {lllite_name}")
@@ -712,6 +735,27 @@ class AnimaLLLiteApply:
                 lllite_name, cond_in_channels,
             )
             mask = None
+
+        image_width, image_height = tensor2pil(image[0]).size
+        if vae is None:
+            latent_info, latent = generate_latent_image_data(width=image_width, height=image_height, model_type=base_model)
+            log(f"{self.NODE_NAME}: No VAE to decode image. Generated an {latent_info} latent of {image_width}*{image_height}")
+        elif vae is not None:
+            if mask is not None and len(mask) > 0:
+                latent_info, latent = generate_latent_image_data(
+                    width           = image_width,
+                    height          = image_height,
+                    model_type      = base_model,
+                    vae             = vae,
+                    mask            = mask,
+                    image           = image,
+                    mask_growth_val = grow_mask_by
+                )
+                log(f"{self.NODE_NAME}: Found mask and VAE, encoding latent for inpainting.")
+            if mask is None:
+                latent_info, latent = generate_latent_image_data(width=image_width, height=image_height, vae = vae, image = image)
+                log(f"{self.NODE_NAME}: Found VAE, but no mask, only encoding image into latent.")
+
 
         dit = _get_inner_dit(model)
         patch_spatial = int(getattr(dit, "patch_spatial", 2))
@@ -806,6 +850,11 @@ class AnimaLLLiteApply:
 
         m = model.clone()
         m.set_model_unet_function_wrapper(wrapper)
-        return (m,)
+        # in FG_AnimaLLLiteApply.apply, right before `return (m, latent)`
+        nm = latent.get("noise_mask") if isinstance(latent, dict) else None
+        print(f"[LLLite] latent keys={list(latent.keys())} "
+              f"noise_mask={'None' if nm is None else tuple(nm.shape)} "
+              f"samples={tuple(latent['samples'].shape)}")
+        return (m, latent)
 
 

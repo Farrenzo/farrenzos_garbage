@@ -37,7 +37,7 @@ class FG_ApplyControlNet:
             }
     }
 
-    RETURN_TYPES = ("CONDITIONING","CONDITIONING", "LATENT")
+    RETURN_TYPES = ("CONDITIONING", "CONDITIONING", "LATENT")
     RETURN_NAMES = ("Positive +", "Negative -", "Latent Noise Mask", )
     CATEGORY = "Farrenzo's Garbage/Controlnet"
     FUNCTION = "apply_controlnet"
