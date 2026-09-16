@@ -25,6 +25,9 @@ is the conversion. This node simply collapses it into one step.
 └──────────────────────────────────────────┘
 
 TILING NOTES (from comfy/sd.py)
+  * The decision logic itself now lives in _fg_helperfunctions (encode_auto /
+    decode_auto) so the encode side of the pack shares it. This node just
+    passes its four widgets through.
   * decode_tiled takes tile sizes in LATENT units; encode_tiled takes PIXELS.
     Stock VAEDecodeTiled divides by spacial_compression_decode(), stock
     VAEEncodeTiled does not. This node takes pixels everywhere and converts.
@@ -43,65 +46,7 @@ TILING NOTES (from comfy/sd.py)
 """
 
 import comfy.model_management as mm
-
-AUTO = -1
-# Fraction of free VRAM an untiled pass may claim before we tile instead.
-_HEADROOM = 0.75
-_TILE_LADDER = (2048, 1536, 1024, 768, 512, 384, 256, 192, 128)
-
-
-def _bounded_shape(shape, tile_x, tile_y, tile_t):
-    """Shape of a single tile, for feeding comfy's memory estimators."""
-    s = list(shape)
-    if len(s) == 5:      # B C T H W
-        if tile_t:
-            s[2] = min(s[2], tile_t)
-        if tile_y:
-            s[3] = min(s[3], tile_y)
-        if tile_x:
-            s[4] = min(s[4], tile_x)
-    elif len(s) == 4:    # B C H W
-        if tile_y:
-            s[2] = min(s[2], tile_y)
-        if tile_x:
-            s[3] = min(s[3], tile_x)
-    return tuple(s)
-
-
-def _auto_tile(vae, shape, estimator, unit_divisor, tile_t=None):
-    """Return a tile size in PIXELS, or 0 for 'do not tile'.
-
-    shape is in the estimator's own units (latent for decode, pixel for
-    encode). unit_divisor converts pixels into those units.
-    """
-    try:
-        free = mm.get_free_memory(vae.device)
-        full = estimator(shape, vae.vae_dtype)
-    except Exception:
-        return 0
-
-    budget = free * _HEADROOM
-    if full <= budget:
-        return 0  # fits whole — always cheaper than any tiling
-
-    longest = max(shape[-2], shape[-1]) * unit_divisor
-
-    for px in _TILE_LADDER:
-        if px > longest:
-            continue
-        units = max(1, px // unit_divisor)
-        try:
-            cost = estimator(_bounded_shape(shape, units, units, tile_t), vae.vae_dtype)
-        except Exception:
-            return 512
-        if cost <= budget:
-            return px
-
-    return _TILE_LADDER[-1]
-
-
-def _resolve(value, auto_value):
-    return auto_value if value == AUTO else value
+from ._fg_helperfunctions import AUTO, encode_auto, decode_auto
 
 
 class FG_LatentTransfer:
@@ -143,57 +88,6 @@ class FG_LatentTransfer:
     DESCRIPTION = ("Decode a latent with one VAE and re-encode it with another, "
                    "returning the intermediate image as well.")
 
-    # -- decode ---------------------------------------------------------
-
-    def _decode(self, vae, latent, tile_size, overlap, temporal_size, temporal_overlap):
-        compression = vae.spacial_compression_decode() or 8
-        frames = latent.shape[2] if latent.ndim == 5 else 1
-
-        t_size = _resolve(temporal_size, 0 if frames <= 1 else 64)
-        t_overlap = _resolve(temporal_overlap, 8)
-
-        size = _resolve(
-            tile_size,
-            _auto_tile(vae, latent.shape, vae.memory_used_decode, compression,
-                       tile_t=(t_size or None)),
-        )
-
-        if size <= 0:
-            return vae.decode(latent), 0
-
-        ov = min(_resolve(overlap, max(32, size // 8)), size // 4)
-
-        # decode_tiled wants latent units; the widget is in pixels.
-        tile_lat = max(1, size // compression)
-        ov_lat = max(0, ov // compression)
-
-        t_comp = vae.temporal_compression_decode()
-        if t_comp is not None and t_size:
-            tt = max(2, t_size // t_comp)
-            to = max(1, min(tt // 2, t_overlap // t_comp))
-        else:
-            tt = to = None
-
-        return vae.decode_tiled(latent, tile_x=tile_lat, tile_y=tile_lat,
-                                overlap=ov_lat, tile_t=tt, overlap_t=to), size
-
-    # -- encode ---------------------------------------------------------
-
-    def _encode(self, vae, pixels, tile_size, overlap, temporal_size, temporal_overlap):
-        shape = (pixels.shape[0], 3, pixels.shape[1], pixels.shape[2])
-        size = _resolve(tile_size, _auto_tile(vae, shape, vae.memory_used_encode, 1))
-
-        if size <= 0:
-            return vae.encode(pixels), 0
-
-        ov = min(_resolve(overlap, max(32, size // 8)), size // 4)
-        t_size = _resolve(temporal_size, 64)
-        t_overlap = _resolve(temporal_overlap, 8)
-
-        # encode_tiled already works in pixels — no conversion.
-        return vae.encode_tiled(pixels, tile_x=size, tile_y=size, overlap=ov,
-                                tile_t=t_size, overlap_t=t_overlap), size
-
     # -- node -----------------------------------------------------------
 
     def transfer(self, samples, source_vae, target_vae=None, tile_size=AUTO,
@@ -202,8 +96,8 @@ class FG_LatentTransfer:
         if getattr(latent, "is_nested", False):
             latent = latent.unbind()[0]
 
-        image, dec_tile = self._decode(source_vae, latent, tile_size, overlap,
-                                       temporal_size, temporal_overlap)
+        image, dec_tile = decode_auto(source_vae, latent, tile_size, overlap,
+                                      temporal_size, temporal_overlap)
         if image.ndim == 5:  # combine batches from video VAEs
             image = image.reshape(-1, *image.shape[-3:])
 
@@ -214,8 +108,9 @@ class FG_LatentTransfer:
 
         mm.soft_empty_cache()
 
-        out, enc_tile = self._encode(
-            target_vae, image[..., :3], tile_size, overlap,
+        # encode_auto trims to 3 channels itself.
+        out, enc_tile = encode_auto(
+            target_vae, image, tile_size, overlap,
             temporal_size, temporal_overlap
         )
 
@@ -224,4 +119,3 @@ class FG_LatentTransfer:
               f"-encode(tile={enc_tile or 'off'})-> {tuple(out.shape)}")
 
         return ({"samples": out}, image)
-

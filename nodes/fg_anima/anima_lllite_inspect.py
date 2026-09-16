@@ -36,6 +36,7 @@ from .anima_controlnet_nodes import (
 
 # _Conditioning1: Conv(k4,s4) -> Conv(k3,s1) -> Conv(k4,s4) = /16 overall
 _COND_STRIDE = 16
+FOLDER = "model_patches"
 
 
 def _to_image(t):
@@ -53,7 +54,7 @@ class FG_LLLiteCondPreview:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "lllite_name": (folder_paths.get_filename_list("controlnet"),),
+                "lllite_name": (folder_paths.get_filename_list(FOLDER),),
                 "image": ("IMAGE",),
             },
             "optional": {
@@ -79,7 +80,7 @@ class FG_LLLiteCondPreview:
 
     def preview(self, lllite_name, image, mask=None, latent=None, model=None,
                 reference_frames=1):
-        path = folder_paths.get_full_path("controlnet", lllite_name)
+        path = folder_paths.get_full_path(FOLDER, lllite_name)
         meta = read_lllite_metadata(path)
         cond_in_channels = int(meta.get("lllite.cond_in_channels", 3))
         masked_input = str(meta.get("lllite.inpaint_masked_input", "false")).lower() == "true"
@@ -87,8 +88,7 @@ class FG_LLLiteCondPreview:
         patch = 2
         if model is not None:
             try:
-                patch = int(getattr(model.get_model_object("diffusion_model"),
-                                    "patch_spatial", 2))
+                patch = int(getattr(model.get_model_object("diffusion_model"), "patch_spatial", 2))
             except Exception:
                 pass
 

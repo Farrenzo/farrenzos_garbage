@@ -18,7 +18,6 @@ from .fg_save_image           import FG_SaveImage
 from .fg_save_video           import FG_SaveVideo
 from .fg_show_text            import FG_ShowText
 from .fg_telegram_notice      import FG_SendTelegramNotification
-from .fg_upscale_model        import FG_ModelImageScaler
 from .fg_WD14                 import FG_WD14Tagger
 from .fg_xpu_guard            import FG_XPUGuard
 from .fg_unified_loader       import FG_UnifiedModelsLoader
@@ -26,6 +25,7 @@ from .fg_linework_composite   import FG_LineworkComposite
 from .fg_hue_correct          import FG_HueCorrect
 from .fg_image_forensics      import FG_ImageForensics
 from .fg_conditioning_cache   import FG_SaveConditioningLatent, FG_LoadConditioningLatent
+from .fg_step_inspect import FG_StepInspect
 
 from .fg_anima.anima_lllite_inspect import FG_LLLiteCondPreview
 from .fg_anima.anima_controlnet_nodes import FG_AnimaLLLiteApply
@@ -74,31 +74,34 @@ from .fg_gguf.fg_gguf_nodes import (
     UnetLoaderGGUFAdvanced,
 )
 
+
+
 NODE_CLASS_MAPPINGS = {
     "FG_Advanced_KSampler"           : FG_Advanced_KSampler,
     "FG_ApplyControlNet"             : FG_ApplyControlNet,
     "FG_ApplyCosmosReferenceLatent"  : FG_ApplyCosmosReferenceLatent,
     "FG_BoxFillwCoordinates"         : FG_CoordinatesBoxFill,
     "FG_CLIPTextEncode"              : FG_CLIPTextEncode,
-    "FG_LatentTransfer"              : FG_LatentTransfer,
     "FG_DynamicLoraLoader"           : FG_LoraLoader,
     "FG_EmptyLatent"                 : FG_EmptyLatent,
     "FG_ImageScaler"                 : FG_ImageScaler,
     "FG_LABColorTransfer"            : FG_LABColorTransfer,
+    "FG_LatentTransfer"              : FG_LatentTransfer,
+    "FG_LineworkComposite"           : FG_LineworkComposite,
+    "FG_LoadConditioning"            : FG_LoadConditioningLatent,
     "FG_LoadImage"                   : FG_LoadImage,
+    "FG_MiniMaxH3_Conditioner"       : FG_MiniMaxH3_Conditioner,
     "FG_Minimum_Maximum"             : FG_MinimumMaximum,
-    "FG_ModelImageScaler"            : FG_ModelImageScaler,
     "FG_ModelReferenceLatentMethod"  : FG_ModelReferenceLatentMethod,
     "FG_PurgeMemory"                 : FG_PurgeMemory,
+    "FG_SaveConditioning"            : FG_SaveConditioningLatent,
     "FG_SaveImage"                   : FG_SaveImage,
     "FG_SaveVideo"                   : FG_SaveVideo,
     "FG_SendTelegramNotification"    : FG_SendTelegramNotification,
     "FG_ShowText"                    : FG_ShowText,
+    "FG_UnifiedModelsLoader"         : FG_UnifiedModelsLoader,
     "FG_WD14Tagger"                  : FG_WD14Tagger,
     "FG_XPUGuard"                    : FG_XPUGuard,
-    "FG_MiniMaxH3_Conditioner"       : FG_MiniMaxH3_Conditioner,
-    "FG_UnifiedModelsLoader"         : FG_UnifiedModelsLoader,
-    "FG_LineworkComposite"           : FG_LineworkComposite,
 
     # Experimental Anima nodes
     "FG_AnimaLLLiteApply"                : FG_AnimaLLLiteApply,
@@ -139,10 +142,11 @@ NODE_CLASS_MAPPINGS = {
     "TripleCLIPLoaderGGUF": TripleCLIPLoaderGGUF,
     "QuadrupleCLIPLoaderGGUF": QuadrupleCLIPLoaderGGUF,
     "UnetLoaderGGUFAdvanced": UnetLoaderGGUFAdvanced,
-    "FG_SaveConditioning": FG_SaveConditioningLatent,
-    "FG_LoadConditioning": FG_LoadConditioningLatent,
-    "FG_HueCorrect": FG_HueCorrect,
+
+    # Experimental
+    "FG_HueCorrect"    : FG_HueCorrect,
     "FG_ImageForensics": FG_ImageForensics,
+    "FG_StepInspect"   : FG_StepInspect,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -156,7 +160,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FG_DynamicLoraLoader"           : "🗑️ Multi-LoRA Loader",
     "FG_EmptyLatent"                 : "🗑️ Advanced Empty Latent",
     "FG_ImageScaler"                 : "🗑️ Image Scaler",
-    "FG_ModelImageScaler"            : "🗑️ Image Scale with Model",
     "FG_KSampler"                    : "🗑️ KSampler for Qwen Image Edit",
     "FG_LABColorTransfer"            : "🗑️ LAB Color Transfer",
     "FG_LineworkComposite"           : "🗑️ Linework Composite",
@@ -210,8 +213,9 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "TripleCLIPLoaderGGUF"    : "🎛️ TripleCLIPLoaderGGUF",
     "QuadrupleCLIPLoaderGGUF" : "🎛️ QuadrupleCLIPLoaderGGUF",
     "UnetLoaderGGUFAdvanced"  : "🎛️ UnetLoaderGGUFAdvanced",
-    "FG_HueCorrect": "🗑️ Hue Correct (LAB)",
+
+    # Experimental
+    "FG_HueCorrect"    : "🗑️ Hue Correct (LAB)",
     "FG_ImageForensics": "🗑️ Image Forensics",
-
-
+    "FG_StepInspect"   : "🗑️ Step Inspect (x0 trajectory)",
 }

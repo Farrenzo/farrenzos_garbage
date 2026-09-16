@@ -61,12 +61,31 @@ app.registerExtension({
                     ? { font: 13, row: 18, handle: 12 }
                     : { font: 10, row: 14, handle: HANDLE };
 
-            // The stock upload extension attaches its own preview via
-            // node.imgs; swallow it so only the crop editor shows the image.
+            // node.imgs is not just the stock preview -- it is the ONLY thing
+            // clipspace reads. copyToClipspace() copies it, and the mask editor
+            // parses the /view?... query off imgs[i].src to build the
+            // original_ref it posts to /upload/mask. That ref is what puts the
+            // result in input/clipspace; blanking imgs left it empty, so masks
+            // were written somewhere else entirely (and "Open in MaskEditor",
+            // which is added conditionally on node.imgs, could vanish outright).
+            //
+            // So keep the DATA and kill the DRAWING: the stock preview is
+            // painted by onDrawBackground, which is no-oped just below.
+            const _imgs = [];
             Object.defineProperty(node, "imgs", {
-                get: () => undefined,
-                set: () => {},
+                configurable: true,
+                // undefined while empty -- callers test `if (node.imgs)` and an
+                // empty array is truthy.
+                get: () => (_imgs.length ? _imgs : undefined),
+                set: (v) => {
+                    _imgs.length = 0;
+                    if (Array.isArray(v)) _imgs.push(...v);
+                },
             });
+            node.onDrawBackground = () => {}; // hide the stock preview
+            node.setSizeForImage = () => {};  // ...and its auto-resize
+            node.imageIndex = 0;              // clipspace's selectedIndex
+            node.overIndex = null;
 
             const state = {
                 img: null,
@@ -88,11 +107,17 @@ app.registerExtension({
                     const r = state.rect;
                     // Treat a selection of (almost) everything as no crop.
                     if (!(r.x < 0.002 && r.y < 0.002 && r.w > 0.996 && r.h > 0.996)) {
+                        const [px0, py0, px1, py1] = pixelBox();
                         value = JSON.stringify({
                             x: +r.x.toFixed(4),
                             y: +r.y.toFixed(4),
                             w: +r.w.toFixed(4),
                             h: +r.h.toFixed(4),
+                            // The exact box travels alongside the normalized
+                            // one: 1024 does not survive a round trip through
+                            // 4 decimals of the image width, and the backend
+                            // prefers px when it is present.
+                            px: [px0, py0, px1, py1],
                         });
                     }
                 }
@@ -108,16 +133,82 @@ app.registerExtension({
                 return Math.round(width * (state.img.height / state.img.width));
             }
 
-            function cropDims() {
-                // Mirror the backend's _parse_crop rounding.
+            // Mirror the backend's _parse_crop: an exact box set by a typed
+            // size wins, otherwise round the normalized rect.
+            function pixelBox() {
                 const iw = state.img.width;
                 const ih = state.img.height;
                 const r = state.rect;
-                const x0 = Math.max(0, Math.min(iw - 1, Math.round(r.x * iw)));
-                const y0 = Math.max(0, Math.min(ih - 1, Math.round(r.y * ih)));
-                const x1 = Math.max(x0 + 1, Math.min(iw, Math.round((r.x + r.w) * iw)));
-                const y1 = Math.max(y0 + 1, Math.min(ih, Math.round((r.y + r.h) * ih)));
+                let x0, y0, x1, y1;
+                if (r.px) {
+                    [x0, y0, x1, y1] = r.px.map((v) => Math.round(v));
+                } else {
+                    x0 = Math.round(r.x * iw);
+                    y0 = Math.round(r.y * ih);
+                    x1 = Math.round((r.x + r.w) * iw);
+                    y1 = Math.round((r.y + r.h) * ih);
+                }
+                x0 = Math.max(0, Math.min(iw - 1, x0));
+                y0 = Math.max(0, Math.min(ih - 1, y0));
+                x1 = Math.max(x0 + 1, Math.min(iw, x1));
+                y1 = Math.max(y0 + 1, Math.min(ih, y1));
+                return [x0, y0, x1, y1];
+            }
+
+            function cropDims() {
+                const [x0, y0, x1, y1] = pixelBox();
                 return [x1 - x0, y1 - y0];
+            }
+
+            // --- typed crop size -------------------------------------------
+            // crop_width / crop_height, 0 meaning "drag freely". One axis set
+            // locks that axis; both set turn the selection into a fixed-size
+            // box you click to position.
+            const wWidget = node.widgets.find((w) => w.name === "crop_width");
+            const hWidget = node.widgets.find((w) => w.name === "crop_height");
+
+            function lockedSize() {
+                const cw = Math.max(0, Math.round(Number(wWidget?.value) || 0));
+                const ch = Math.max(0, Math.round(Number(hWidget?.value) || 0));
+                return [cw, ch];
+            }
+
+            // Force the selection to the typed pixel size, keeping its centre
+            // where it is -- or centring on (atX, atY) in node space if given.
+            // Returns false when nothing is locked, so callers fall through to
+            // the free-drag path.
+            function applyLockedSize(atX, atY) {
+                if (!state.img) return false;
+                const [cw, ch] = lockedSize();
+                if (!cw && !ch) return false;
+
+                const iw = state.img.width;
+                const ih = state.img.height;
+                const cur = state.rect || { x: 0, y: 0, w: 1, h: 1 };
+                const pw = Math.max(1, Math.min(iw, cw || Math.round(cur.w * iw)));
+                const ph = Math.max(1, Math.min(ih, ch || Math.round(cur.h * ih)));
+
+                let cx, cy;
+                if (atX != null && state.box) {
+                    // Node space -> image pixels.
+                    const { bx, by, bw, bh } = state.box;
+                    cx = ((atX - bx) / bw) * iw;
+                    cy = ((atY - by) / bh) * ih;
+                } else {
+                    cx = (cur.x + cur.w / 2) * iw;
+                    cy = (cur.y + cur.h / 2) * ih;
+                }
+
+                const x0 = Math.max(0, Math.min(iw - pw, Math.round(cx - pw / 2)));
+                const y0 = Math.max(0, Math.min(ih - ph, Math.round(cy - ph / 2)));
+                state.rect = {
+                    x: x0 / iw,
+                    y: y0 / ih,
+                    w: pw / iw,
+                    h: ph / ih,
+                    px: [x0, y0, x0 + pw, y0 + ph],
+                };
+                return true;
             }
 
             // Returns [w, h] after the max_megapixels cap, or null if it
@@ -134,6 +225,11 @@ app.registerExtension({
 
             function hitTest(px, py) {
                 if (!state.rect || !state.box) return { mode: "new" };
+                const [lkw, lkh] = lockedSize();
+                // Both axes locked: there is nothing to resize, so the corners
+                // become part of the move target rather than dragging the
+                // selection off its typed dimensions.
+                const fullyLocked = lkw > 0 && lkh > 0;
                 const handle = ui().handle;
                 const { bx, by, bw, bh } = state.box;
                 const sx = bx + state.rect.x * bw;
@@ -144,9 +240,11 @@ app.registerExtension({
                     nw: [sx, sy], ne: [sx + sw, sy],
                     sw: [sx, sy + sh], se: [sx + sw, sy + sh],
                 };
-                for (const [name, [cx, cy]] of Object.entries(corners)) {
-                    if (Math.abs(px - cx) <= handle && Math.abs(py - cy) <= handle) {
-                        return { mode: "resize", corner: name };
+                if (!fullyLocked) {
+                    for (const [name, [cx, cy]] of Object.entries(corners)) {
+                        if (Math.abs(px - cx) <= handle && Math.abs(py - cy) <= handle) {
+                            return { mode: "resize", corner: name };
+                        }
                     }
                 }
                 if (px >= sx && px <= sx + sw && py >= sy && py <= sy + sh) {
@@ -197,6 +295,15 @@ app.registerExtension({
                 },
 
                 draw: function (ctx, _node, widgetWidth, y, H, lowQuality) {
+                    // pasteFromClipspace() writes imageWidget.value straight in
+                    // and does not always fire the widget callback, which used
+                    // to leave the editor showing the pre-mask image.
+                    // loadImage() updates lastLoaded up front, so this fires
+                    // once per change rather than once per frame. The crop is
+                    // deliberately kept: a mask round trip returns the same
+                    // image at the same size, and re-selecting every time would
+                    // be maddening.
+                    if (imageWidget.value !== lastLoaded) loadImage();
                     const u = ui();
                     const h = boxHeight(this, y, allocHeight ?? H) - 8;
                     const x = MARGIN;
@@ -280,8 +387,11 @@ app.registerExtension({
                             }
                         };
                         const [pw, ph] = cropDims();
+                        const [lkw, lkh] = lockedSize();
+                        // Blue matches the selection outline, so a locked box
+                        // reads as locked without another row of chrome.
                         drawPill(
-                            [[`${pw} x ${ph}`, "#fff"]],
+                            [[`${pw} x ${ph}`, lkw || lkh ? "#4af" : "#fff"]],
                             sy > y + pillH + 2 ? sy - 3 : sy + pillH - 1
                         );
                         const capped = cappedDims(pw, ph);
@@ -357,7 +467,27 @@ app.registerExtension({
                         if (px < bx || px > bx + bw || py < by || py > by + bh) {
                             return false;
                         }
-                        state.drag = { ...hitTest(px, py), startX: px, startY: py, moved: false };
+                        const hit = hitTest(px, py);
+                        const [lkw, lkh] = lockedSize();
+                        if (lkw > 0 && lkh > 0 && hit.mode !== "move") {
+                            // Fixed size: a click anywhere drops the box centred
+                            // there and goes straight into a move drag, so the
+                            // typed dimensions can't be dragged away from.
+                            applyLockedSize(px, py);
+                            state.drag = {
+                                mode: "move",
+                                offX: px - (bx + state.rect.x * bw),
+                                offY: py - (by + state.rect.y * bh),
+                                startX: px,
+                                startY: py,
+                                moved: false,
+                            };
+                            if (event.target?.style) event.target.style.cursor = "grabbing";
+                            syncCrop();
+                            this.triggerDraw?.();
+                            return true;
+                        }
+                        state.drag = { ...hit, startX: px, startY: py, moved: false };
                         const el = event.target;
                         if (el?.style) {
                             el.style.cursor =
@@ -400,6 +530,20 @@ app.registerExtension({
                             ny = Math.max(0, Math.min(1 - state.rect.h, ny));
                             state.rect.x = nx;
                             state.rect.y = ny;
+                            if (state.rect.px) {
+                                // Move the exact box with it, then snap the
+                                // normalized rect back onto it so what's drawn
+                                // is what gets cropped.
+                                const iw = state.img.width;
+                                const ih = state.img.height;
+                                const pw = state.rect.px[2] - state.rect.px[0];
+                                const ph = state.rect.px[3] - state.rect.px[1];
+                                const x0 = Math.max(0, Math.min(iw - pw, Math.round(nx * iw)));
+                                const y0 = Math.max(0, Math.min(ih - ph, Math.round(ny * ih)));
+                                state.rect.px = [x0, y0, x0 + pw, y0 + ph];
+                                state.rect.x = x0 / iw;
+                                state.rect.y = y0 / ih;
+                            }
                         } else if (drag.mode === "resize" && state.rect) {
                             const r = state.rect;
                             let x0 = bx + r.x * bw;
@@ -429,6 +573,11 @@ app.registerExtension({
                         if (drag.mode === "new" && !drag.moved) {
                             state.rect = null;
                         }
+                        // Re-snap after a free drag: with only one axis locked
+                        // the other stays resizable, and this pulls the locked
+                        // one back to the exact value on release. Guarded on
+                        // state.rect so clearing the crop above still works.
+                        if (state.rect) applyLockedSize();
                         state.drag = null;
                         if (event.target?.style) event.target.style.cursor = "";
                         syncCrop();
@@ -470,6 +619,10 @@ app.registerExtension({
                         : "nesw-resize";
                 }
                 if (hit.mode === "move") return "grab";
+                const [lkw, lkh] = lockedSize();
+                // Locked: a click out here repositions the box rather than
+                // clearing it, so don't advertise not-allowed.
+                if (lkw > 0 && lkh > 0) return "crosshair";
                 // A click out here removes the existing crop (drag draws new).
                 return state.rect ? "not-allowed" : "crosshair";
             }
@@ -551,8 +704,29 @@ app.registerExtension({
                 };
             }
 
+            for (const sizeWidget of [wWidget, hWidget]) {
+                if (!sizeWidget) continue;
+                const prevSizeCallback = sizeWidget.callback;
+                sizeWidget.callback = function () {
+                    const r = prevSizeCallback?.apply(this, arguments);
+                    if (applyLockedSize()) {
+                        syncCrop();
+                    } else if (state.rect) {
+                        // Lock cleared: drop the exact box but keep the
+                        // selection, which is now freely draggable again.
+                        delete state.rect.px;
+                        syncCrop();
+                    }
+                    editorWidget.triggerDraw?.();
+                    node.setDirtyCanvas(true, true);
+                    return r;
+                };
+            }
+
             let loadSeq = 0;
+            let lastLoaded = null;
             function loadImage(autoFit = false) {
+                lastLoaded = imageWidget.value;
                 const seq = ++loadSeq;
                 const info = parseImageValue(imageWidget.value);
                 if (!info) {
@@ -569,7 +743,20 @@ app.registerExtension({
                 img.onload = () => {
                     if (seq !== loadSeq) return; // superseded by a newer load
                     state.img = img;
+                    // Clipspace reads the /view?... src off this.
+                    node.imgs = [img];
                     dbg("image loaded:", info.filename, img.width + "x" + img.height);
+
+                    // Re-apply a typed size to the new image, but only when it
+                    // doesn't already match -- otherwise restoring a saved
+                    // workflow would re-centre a crop that was already correct.
+                    const [lkw, lkh] = lockedSize();
+                    if (lkw || lkh) {
+                        const [curW, curH] = state.rect ? cropDims() : [0, 0];
+                        if ((lkw && curW !== lkw) || (lkh && curH !== lkh)) {
+                            if (applyLockedSize()) syncCrop();
+                        }
+                    }
                     if (autoFit && !isVueMode()) {
                         // Fit the node height to the image aspect once, when
                         // the image (first) loads; afterwards the user can

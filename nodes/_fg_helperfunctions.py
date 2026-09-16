@@ -15,8 +15,7 @@ import numpy as np
 from typing import List
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
-import comfy.model_management
-from server import PromptServer
+import comfy.model_management as comfy_mm
 
 SCALING_METHODS = {
     "box"     : Image.BOX,
@@ -63,7 +62,7 @@ def generate_latent_image_data(
     image      = None,
     mask       = None,
     mask_growth_val = 6,
-    device = comfy.model_management.intermediate_device()
+    device = comfy_mm.intermediate_device()
 ):
     """Return a latent"""
     model_info = MODEL_TYPES[model_type]
@@ -77,13 +76,17 @@ def generate_latent_image_data(
                     width  // model_info["spatial_div"]
                 ],
                 device=device,
-                dtype=comfy.model_management.intermediate_dtype()
+                dtype=comfy_mm.intermediate_dtype()
             )
         }
         latent_info = "empty"
     elif vae is not None and mask is None:
-        latent = {"samples":vae.encode(image)}
-        latent_info = "image"
+        # encode_auto instead of vae.encode: it measures free VRAM and only
+        # tiles when a single pass won't fit. Every node that builds a latent
+        # comes through here, so they all get it for free.
+        samples, tile_px = encode_auto(vae, image)
+        latent = {"samples": samples}
+        latent_info = f"image (tiled at {tile_px}px)" if tile_px else "image"
     elif vae is not None and mask is not None:
         latent = vae_encode_inpainter(vae, image, mask, grow_mask_by=mask_growth_val)
         latent_info = "inpaint"
@@ -121,7 +124,13 @@ def vae_encode_inpainter(vae, pixels, mask, grow_mask_by=6):
         pixels[:,:,:,i] -= 0.5
         pixels[:,:,:,i] *= m
         pixels[:,:,:,i] += 0.5
-    t = vae.encode(pixels)
+    # The masked pixels are just pixels by this point, so the same auto-tiling
+    # applies. This was the one encode in the pack still going through in a
+    # single pass regardless of size. Return shape is unchanged for callers;
+    # the tile decision is only worth a log line.
+    t, tile_px = encode_auto(vae, pixels)
+    if tile_px:
+        log(f"Inpaint encode tiled at {tile_px}px ({pixels.shape[2]}x{pixels.shape[1]}).")
 
     return {"samples":t, "noise_mask": (mask_erosion[:,:,:x,:y].round())}
 
@@ -147,29 +156,6 @@ def unpack_masks(masks: list):
             mask_width, mask_height = tensor2pil(ma).size
     return unpacked_masks, mask_width, mask_height
 
-# ---------------------------------------- #
-# OLD
-# ---------------------------------------- #
-"""
-def clear_memory(purge_cache: bool = False, purge_models: bool = False):
-    if purge_cache:
-        import gc
-        gc.collect()
-        if torch.cuda.is_available():
-            for i in range(torch.cuda.device_count()):
-                device = torch.device(f"cuda:{i}")
-                comfy.model_management.free_memory(
-                    comfy.model_management.get_total_memory(device) * 0.8,
-                    device
-                )
-                with torch.cuda.device(i):
-                    torch.cuda.synchronize()
-                    torch.cuda.empty_cache()
-                    torch.cuda.ipc_collect()
-    if purge_models:
-        comfy.model_management.unload_all_models()
-    log(f"👝 Memory purged.")
-"""
 # ----------------------------------------
 # NEW
 # ----------------------------------------
@@ -260,7 +246,7 @@ def clear_memory(purge_cache: bool = False, purge_models: bool = False, keep: fl
     run while model params were still registered as loaded.
     """
     if purge_models:
-        comfy.model_management.unload_all_models()
+        comfy_mm.unload_all_models()
 
     if purge_cache:
         gc.collect()
@@ -268,9 +254,9 @@ def clear_memory(purge_cache: bool = False, purge_models: bool = False, keep: fl
             for device in get_devices(name, mod):
                 try:
                     target = 1e30 if nuclear else (
-                        comfy.model_management.get_total_memory(device) * (1.0 - keep)
+                        comfy_mm.get_total_memory(device) * (1.0 - keep)
                     )
-                    comfy.model_management.free_memory(target, device)
+                    comfy_mm.free_memory(target, device)
                 except Exception as e:
                     log(f"⚠️ free_memory failed on {device}: {e}", message_type="warning")
                 purge_backend(name, mod, device)
@@ -426,3 +412,152 @@ def get_output_path(node_name: str, filename_prefix: str, output_path: str) -> t
 
     return full_output_folder, filename_base, subfolder
 
+# --------------------------------------------------------------------------- #
+# Shared VAE tiling decisions, for encode AND decode
+# --------------------------------------------------------------------------- #
+# This logic started life inside fg_load_vae.py's decode path. It lives here so
+# the encode side can use it too -- notably generate_latent_image_data below,
+# and fg_image_scale, which can hand the VAE a model-upscaled 4096x4096 image.
+#
+# The important idea, and the reason this is worth sharing rather than
+# reimplementing: AUTO's first job is deciding whether to tile AT ALL, not
+# picking a size. For 2D VAEs comfy's decode_tiled_ / encode_tiled_ run
+# tiled_scale three times (tile//2 x tile*2, tile*2 x tile//2, tile x tile) and
+# average the results to hide seams, so tiling an image VAE costs roughly 3x no
+# matter how the tiles are sized. Skipping it is worth far more than any amount
+# of tile tuning. decode_tiled_3d runs once, so video VAEs pay no such penalty.
+#
+# Units, which are easy to get wrong (see comfy/sd.py):
+#   * decode_tiled takes tile sizes in LATENT units.
+#   * encode_tiled takes them in PIXELS.
+# Stock VAEDecodeTiled divides by spacial_compression_decode(); stock
+# VAEEncodeTiled does not. Everything here is in pixels and converts on the way
+# in, so callers never have to think about it.
+#
+#   tile_size / overlap / temporal_size / temporal_overlap:
+#      -1  = auto (default)
+#       0  = force off
+#      >0  = explicit, in pixels (frames for the temporal pair)
+
+AUTO = -1
+# Fraction of free VRAM an untiled pass may claim before we tile instead.
+HEADROOM = 0.75
+TILE_LADDER = (2048, 1536, 1024, 768, 512, 384, 256, 192, 128)
+
+
+def bounded_shape(shape, tile_x, tile_y, tile_t):
+    """Shape of a single tile, for feeding comfy's memory estimators."""
+    s = list(shape)
+    if len(s) == 5:      # B C T H W
+        if tile_t:
+            s[2] = min(s[2], tile_t)
+        if tile_y:
+            s[3] = min(s[3], tile_y)
+        if tile_x:
+            s[4] = min(s[4], tile_x)
+    elif len(s) == 4:    # B C H W
+        if tile_y:
+            s[2] = min(s[2], tile_y)
+        if tile_x:
+            s[3] = min(s[3], tile_x)
+    return tuple(s)
+
+
+def auto_tile(vae, shape, estimator, unit_divisor, tile_t=None):
+    """Return a tile size in PIXELS, or 0 for 'do not tile'.
+
+    shape is in the estimator's own units (latent for decode, pixel for
+    encode). unit_divisor converts pixels into those units.
+    """
+    try:
+        free = comfy_mm.get_free_memory(vae.device)
+        full = estimator(shape, vae.vae_dtype)
+    except Exception:
+        return 0
+
+    budget = free * HEADROOM
+    if full <= budget:
+        return 0  # fits whole -- always cheaper than any tiling
+
+    longest = max(shape[-2], shape[-1]) * unit_divisor
+
+    for px in TILE_LADDER:
+        if px > longest:
+            continue
+        units = max(1, px // unit_divisor)
+        try:
+            cost = estimator(bounded_shape(shape, units, units, tile_t), vae.vae_dtype)
+        except Exception:
+            return 512
+        if cost <= budget:
+            return px
+
+    return TILE_LADDER[-1]
+
+
+def resolve(value, auto_value):
+    return auto_value if value == AUTO else value
+
+
+# --------------------------------------------------------------------------- #
+# Public entry points
+# --------------------------------------------------------------------------- #
+def encode_auto(vae, pixels, tile_size=AUTO, overlap=AUTO,
+                temporal_size=AUTO, temporal_overlap=AUTO):
+    """Encode pixels (B, H, W, C) to a latent, tiling only if it won't fit.
+
+    Returns (latent_tensor, tile_px) where tile_px is 0 when no tiling was
+    used -- handy for logging what actually happened.
+    """
+    pixels = pixels[..., :3]
+    shape = (pixels.shape[0], 3, pixels.shape[1], pixels.shape[2])
+    size = resolve(tile_size, auto_tile(vae, shape, vae.memory_used_encode, 1))
+
+    if size <= 0:
+        return vae.encode(pixels), 0
+
+    ov = min(resolve(overlap, max(32, size // 8)), size // 4)
+    t_size = resolve(temporal_size, 64)
+    t_overlap = resolve(temporal_overlap, 8)
+
+    # encode_tiled already works in pixels -- no conversion.
+    return vae.encode_tiled(pixels, tile_x=size, tile_y=size, overlap=ov,
+                            tile_t=t_size, overlap_t=t_overlap), size
+
+
+def decode_auto(vae, latent, tile_size=AUTO, overlap=AUTO,
+                temporal_size=AUTO, temporal_overlap=AUTO):
+    """Decode a latent to pixels, tiling only if it won't fit.
+
+    Returns (image_tensor, tile_px), tile_px 0 when untiled.
+    """
+    compression = vae.spacial_compression_decode() or 8
+    frames = latent.shape[2] if latent.ndim == 5 else 1
+
+    t_size = resolve(temporal_size, 0 if frames <= 1 else 64)
+    t_overlap = resolve(temporal_overlap, 8)
+
+    size = resolve(
+        tile_size,
+        auto_tile(vae, latent.shape, vae.memory_used_decode, compression,
+                  tile_t=(t_size or None)),
+    )
+
+    if size <= 0:
+        return vae.decode(latent), 0
+
+    ov = min(resolve(overlap, max(32, size // 8)), size // 4)
+
+    # decode_tiled wants latent units; everything here is in pixels.
+    tile_lat = max(1, size // compression)
+    ov_lat = max(0, ov // compression)
+
+    t_comp = vae.temporal_compression_decode()
+    if t_comp is not None and t_size:
+        tt = max(2, t_size // t_comp)
+        to = max(1, min(tt // 2, t_overlap // t_comp))
+    else:
+        tt = to = None
+
+    return vae.decode_tiled(latent, tile_x=tile_lat, tile_y=tile_lat,
+                            overlap=ov_lat, tile_t=tt, overlap_t=to), size

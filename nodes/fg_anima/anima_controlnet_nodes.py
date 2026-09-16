@@ -660,7 +660,7 @@ class FG_AnimaLLLiteApply:
         return {
             "required": {
                 "model": ("MODEL",),
-                "lllite_name": (folder_paths.get_filename_list("controlnet"),),
+                "lllite_name": (folder_paths.get_filename_list("model_patches"),),
                 "image": ("IMAGE",),
                 "strength": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01}),
                 "start_percent": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.001}),
@@ -699,7 +699,7 @@ class FG_AnimaLLLiteApply:
             log(f"{self.NODE_NAME}: Controlnet with strength of zero not applied.")
             return (model, )
 
-        weights_path = folder_paths.get_full_path("controlnet", lllite_name)
+        weights_path = folder_paths.get_full_path("model_patches", lllite_name)
         if weights_path is None or not os.path.isfile(weights_path):
             raise FileNotFoundError(f"LLLite weights not found: {lllite_name}")
 

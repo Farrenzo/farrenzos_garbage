@@ -52,7 +52,7 @@ class FG_Advanced_KSampler:
         }
 
     RETURN_TYPES = ("LATENT", )
-    RETURN_NAMES = ("Latent")
+    RETURN_NAMES = ("Latent", )
     OUTPUT_TOOLTIPS = ("The denoised latent.",)
     FUNCTION = "sample"
     CATEGORY = "Farrenzo's Garbage/Sampling"
@@ -116,8 +116,6 @@ class FG_Advanced_KSampler:
             force_full_denoise = False
         
         if compute_sigmas:
-            print(f"DEBUG latent shape: {latent_image['samples'].shape}")
-            print(f"DEBUG latent ndim: {latent_image['samples'].ndim}")
             # Use negative indexing so it works for both 4D (SDXL) and 5D QWEN/Flux etc:
             width  = latent_image["samples"].shape[-1] * 8
             height = latent_image["samples"].shape[-2] * 8

@@ -5,6 +5,9 @@
  *   1. The three "enable_*" switches are mutually exclusive. Turning one on
  *      turns the other two off, and only the active mode's options stay
  *      visible. Structure borrowed from inpaint-cropandstitch/showcontrol.js.
+ *      "use_model" nests inside enable_manual_size: it is NOT a fourth mode
+ *      and takes no part in the exclusivity, it just gates its own three
+ *      options behind its parent still being on.
  *   2. background_color gets a colour swatch you can click, plus right-click
  *      menu entries. ComfyUI still has no built-in colour widget type
  *      (Comfy-Org/ComfyUI#9531 is open), so this decorates the plain STRING
@@ -31,10 +34,23 @@ const TARGET_CLASSES = ["FG_ImageScaler", "FG_ImageScale", "FG_Image_Scaler"];
 const SWITCHES = {
     enable_round_to_multiple  : ["rounding", "round_to_multiple"],
     enable_scale_to_megapixels: ["megapixels", "resolution_steps"],
-    enable_manual_size        : ["desired_width", "desired_height"],
+    enable_manual_size        : ["desired_width", "desired_height", "use_model"],
 };
 
 const SWITCH_NAMES = Object.keys(SWITCHES);
+
+// Switches nested inside one of the three above. Their options show only when
+// BOTH the parent switch and the sub-switch are on; the sub-switch itself is
+// listed in its parent's deps, so it disappears with the parent. These are not
+// mutually exclusive with anything -- they're a second level, not a fourth mode.
+const SUB_SWITCHES = {
+    use_model: {
+        parent: "enable_manual_size",
+        deps  : ["max_longest_length", "model_multiple", "upscale_model"],
+    },
+};
+
+const SUB_SWITCH_NAMES = Object.keys(SUB_SWITCHES);
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -45,6 +61,8 @@ const findWidgetByName = (node, name) =>
 function isTargetNode(node) {
     if (node.comfyClass && TARGET_CLASSES.includes(node.comfyClass)) return true;
     // Fall back to duck typing so a rename of the mapping key doesn't break this.
+    // Deliberately only the three top-level switches: a node from before the
+    // upscale-model merge has no use_model widget and should still be managed.
     return SWITCH_NAMES.every((name) => !!findWidgetByName(node, name));
 }
 
@@ -138,6 +156,21 @@ function updateNode(node, triggerName) {
                 layoutChanged = toggleWidget(node, findWidgetByName(node, dep), show) || layoutChanged;
             }
         }
+
+        // Second level, after the first: the parent loop above has already
+        // shown or hidden the sub-switch widget itself, and a sub-switch's
+        // options are only reachable when its parent survived that pass.
+        for (const subName of SUB_SWITCH_NAMES) {
+            const { parent, deps } = SUB_SWITCHES[subName];
+            const sub = findWidgetByName(node, subName);
+            if (!sub) continue;                      // pre-merge node, nothing to do
+            const parentSwitch = findWidgetByName(node, parent);
+            const parentOn = !!(parentSwitch && parentSwitch.value === true);
+            const show = parentOn && sub.value === true;
+            for (const dep of deps) {
+                layoutChanged = toggleWidget(node, findWidgetByName(node, dep), show) || layoutChanged;
+            }
+        }
     } finally {
         node.__fgScaleBusy = false;
     }
@@ -191,6 +224,9 @@ app.registerExtension({
         };
 
         for (const name of SWITCH_NAMES) hookWidget(node, findWidgetByName(node, name));
+        // Sub-switches need the same value hook, otherwise their options only
+        // appear after some unrelated widget happens to trigger a refresh.
+        for (const name of SUB_SWITCH_NAMES) hookWidget(node, findWidgetByName(node, name));
 
         updateNode(node);
     },
@@ -199,4 +235,3 @@ app.registerExtension({
         if (isTargetNode(node)) updateNode(node);
     },
 });
-
