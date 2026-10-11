@@ -10,7 +10,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 WRAPPER_KEY = "comfyui_anima_regional_conditioning"
-REGION_TYPE = "ANIMA_CONDITIONING_REGIONS"
 
 
 # ---------------------------------------------------------------------------
@@ -18,40 +17,15 @@ REGION_TYPE = "ANIMA_CONDITIONING_REGIONS"
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
-class AnimaConditioningRegionChain:
-    previous: Optional["AnimaConditioningRegionChain"]
-    mask: torch.Tensor
+class AnimaConditioningRegion:
+    mask: torch.Tensor  # [1, H, W] float on CPU
     conditioning: list
     weight: float
-
-    def flatten(self) -> list["AnimaConditioningRegionChain"]:
-        regions = []
-        current: Optional[AnimaConditioningRegionChain] = self
-        while current is not None:
-            regions.append(current)
-            current = current.previous
-        regions.reverse()
-        return regions
 
 
 # ---------------------------------------------------------------------------
 # Tensor helpers
 # ---------------------------------------------------------------------------
-
-def _prepare_mask(mask: torch.Tensor) -> torch.Tensor:
-    if not torch.is_tensor(mask):
-        raise RuntimeError(f"Expected mask tensor, got {type(mask)}.")
-    mask = mask.detach().float()
-    if mask.ndim == 2:
-        mask = mask.unsqueeze(0)
-    elif mask.ndim == 3:
-        mask = mask[:1]
-    elif mask.ndim == 4:
-        mask = mask[:1, 0]
-    else:
-        raise RuntimeError(f"Unsupported mask rank {mask.ndim}; expected H,W or B,H,W.")
-    return mask.clamp(0.0, 1.0).cpu().contiguous()
-
 
 def _extract_conditioning_parts(conditioning: list, name: str) -> tuple[torch.Tensor, dict]:
     if not conditioning:
@@ -348,7 +322,7 @@ def _masked_attn_op(
 class AnimaRegionalConditioningPatch:
     def __init__(
         self,
-        regions: list[AnimaConditioningRegionChain],
+        regions: list[AnimaConditioningRegion],
         base_mode: str,
         base_strength: float,
         start_sigma: float,
@@ -389,7 +363,7 @@ class AnimaRegionalConditioningPatch:
 
         for idx, region in enumerate(regions, start=1):
             weight = max(float(region.weight), 0.0)
-            mask = _prepare_mask(region.mask) if weight > 0.0 else torch.zeros_like(_prepare_mask(region.mask))
+            mask = region.mask if weight > 0.0 else torch.zeros_like(region.mask)
             cond, metadata = _extract_conditioning_parts(
                 region.conditioning, f"region_{idx}.conditioning"
             )

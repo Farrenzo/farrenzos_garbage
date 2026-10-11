@@ -1,37 +1,8 @@
+import { ensureLibrary, findModel } from "./fg_resource_manager.js";
 const { api } = window.comfyAPI.api;
 const { app } = window.comfyAPI.app;
 
 let loraList = [];
-let loraIndex = {};
-let loraPreviewMap = {};   // { "lora_name01": "lora_name01.webp", ... }
-
-const MODEL_EXTS = [".safetensors", ".ckpt", ".pt", ".pth"];
-
-/**
- * Derive the preview-image stem from a LoRA's full path.
- * Mirrors the naming used by the extraction script:
- *   "folder\\lora_name01.safetensors"  ->  "lora_name01"
- */
-function stemFromLoraName(loraName) {
-    if (!loraName) return "";
-    const basename = loraName.replace(/\\/g, "/").split("/").pop();
-    const lower    = basename.toLowerCase();
-    for (const ext of MODEL_EXTS) {
-        if (lower.endsWith(ext)) return basename.slice(0, -ext.length);
-    }
-    return basename;
-}
-
-/**
- * Returns a URL for the lora's preview image, or null if none exists
- * in the .lora_previews folder.
- */
-function getLoraPreviewUrl(loraName) {
-    const stem = stemFromLoraName(loraName);
-    if (!stem) return null;
-    const filename = loraPreviewMap[stem];
-    return filename ? `/fg/lora_preview/${encodeURIComponent(filename)}` : null;
-}
 
 async function fetchLoraList() {
     try {
@@ -47,38 +18,6 @@ async function fetchLoraList() {
     } catch (e) {
         console.error("Failed to fetch LoRA list:", e);
     }
-}
-
-async function fetchLoraIndex() {
-    try {
-        const resp = await api.fetchApi("/fg/lora_index");
-        loraIndex = await resp.json();
-    } catch (e) {
-        console.error("Failed to fetch LoRA index:", e);
-    }
-}
-
-async function fetchLoraPreviewMap() {
-    try {
-        const resp = await api.fetchApi("/fg/lora_previews");
-        loraPreviewMap = await resp.json();
-    } catch (e) {
-        console.error("Failed to fetch LoRA preview map:", e);
-    }
-}
-
-fetchLoraList();
-fetchLoraIndex();
-fetchLoraPreviewMap();
-
-function getLoraInfo(loraName) {
-    if (!loraName) return null;
-    if (loraIndex[loraName]) return loraIndex[loraName];
-    const alt = loraName.replace(/\//g, "\\");
-    if (loraIndex[alt]) return loraIndex[alt];
-    const alt2 = loraName.replace(/\\/g, "/");
-    if (loraIndex[alt2]) return loraIndex[alt2];
-    return null;
 }
 
 function truncate(str, max) {
@@ -202,6 +141,9 @@ app.registerExtension({
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
         if (nodeData.name !== "FG_DynamicLoraLoader") return;
 
+        // Awaited so saved workflows restore with the list, triggers and previews already loaded.
+        await Promise.all([fetchLoraList(), ensureLibrary("loras")]);
+
         const WIDGET_KEYS = [
             "spacerWidget",
             "loraWidget",
@@ -256,7 +198,7 @@ app.registerExtension({
         };
 
         nodeType.prototype.updateLoraInfo = function (entry) {
-            const info     = getLoraInfo(entry.loraWidget?.value);
+            const info     = findModel("loras", entry.loraWidget?.value);
             const triggers = info?.trigger_words || "";
             entry._triggerWords = triggers;
 
@@ -266,7 +208,7 @@ app.registerExtension({
                     : "  No trigger words";
             }
 
-            const previewUrl = getLoraPreviewUrl(entry.loraWidget?.value);
+            const previewUrl = info?.preview_url;
             if (previewUrl) {
                 const existing = this._previewImages[entry.index];
                 if (!existing || existing._fgSrc !== previewUrl) {
@@ -285,6 +227,11 @@ app.registerExtension({
             }
 
             app.graph.setDirtyCanvas(true, true);
+        };
+
+        // Called by the resource manager after an Edit info save.
+        nodeType.prototype.onLibraryUpdated = function () {
+            for (const entry of this.loraEntries) this.updateLoraInfo(entry);
         };
 
         // ── Add entry ────────────────────────────────────────────

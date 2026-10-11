@@ -90,8 +90,16 @@ class FG_LatentTransfer:
 
     # -- node -----------------------------------------------------------
 
-    def transfer(self, samples, source_vae, target_vae=None, tile_size=AUTO,
-                 overlap=AUTO, temporal_size=AUTO, temporal_overlap=AUTO):
+    def transfer(
+        self,
+        samples,
+        source_vae,
+        target_vae=None,
+        tile_size=AUTO,
+        overlap=AUTO,
+        temporal_size=AUTO,
+        temporal_overlap=AUTO
+    ):
         latent = samples["samples"]
         if getattr(latent, "is_nested", False):
             latent = latent.unbind()[0]

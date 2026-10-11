@@ -19,6 +19,7 @@ app.registerExtension({
             "FG_ImageScaler",
             "FG_KSampler",
             "FG_LABColorTransfer",
+            "FG_LineworkComposite",
             "FG_LoadImage",
             "FG_Minimum_Maximum",
             "FG_ModelImageScaler",
@@ -36,7 +37,6 @@ app.registerExtension({
 
             "FG_AnimaLLLiteApply",
             "FG_LLLiteCondPreview",
-            "AnimaConditioningRegion",
             "ApplyAnimaRegionalConditioningPatch",
 
             "AnimaIPAdapterLoader",

@@ -90,23 +90,39 @@ app.registerExtension({
             const state = {
                 img: null,
                 rect: null, // normalized {x,y,w,h} or null = full image
+                // Polygon mode: normalized [[x,y],...]. rect is then derived
+                // from it (bounding box, or the typed size around it).
+                poly: null,
+                draft: null, // polygon being clicked out / lassoed, not closed yet
+                hover: null, // node-space pointer, for the draft's rubber band
                 drag: null,
                 box: null, // node-space letterbox of the image, set by draw()
             };
 
-            try {
-                const saved = cropWidget.value ? JSON.parse(cropWidget.value) : null;
-                if (saved && saved.w > 0 && saved.h > 0) state.rect = saved;
-            } catch (e) {
+            const shapeWidget = node.widgets.find((w) => w.name === "crop_shape");
+            const isPoly = () => !!shapeWidget?.value?.startsWith("polygon");
+
+            function restoreCrop() {
                 state.rect = null;
+                state.poly = null;
+                state.draft = null;
+                try {
+                    const saved = cropWidget.value ? JSON.parse(cropWidget.value) : null;
+                    if (saved && saved.w > 0 && saved.h > 0) state.rect = saved;
+                    if (saved?.poly?.length >= 3) state.poly = saved.poly;
+                } catch (e) {
+                    state.rect = null;
+                }
             }
+            restoreCrop();
 
             function syncCrop() {
                 let value = "";
                 if (state.rect && state.rect.w > 0.001 && state.rect.h > 0.001) {
                     const r = state.rect;
-                    // Treat a selection of (almost) everything as no crop.
-                    if (!(r.x < 0.002 && r.y < 0.002 && r.w > 0.996 && r.h > 0.996)) {
+                    // Treat a selection of (almost) everything as no crop --
+                    // unless it's a polygon, which still masks the corners.
+                    if (state.poly || !(r.x < 0.002 && r.y < 0.002 && r.w > 0.996 && r.h > 0.996)) {
                         const [px0, py0, px1, py1] = pixelBox();
                         value = JSON.stringify({
                             x: +r.x.toFixed(4),
@@ -118,6 +134,9 @@ app.registerExtension({
                             // 4 decimals of the image width, and the backend
                             // prefers px when it is present.
                             px: [px0, py0, px1, py1],
+                            ...(state.poly && {
+                                poly: state.poly.map(([px, py]) => [+px.toFixed(4), +py.toFixed(4)]),
+                            }),
                         });
                     }
                 }
@@ -209,6 +228,187 @@ app.registerExtension({
                     px: [x0, y0, x0 + pw, y0 + ph],
                 };
                 return true;
+            }
+
+            // --- polygon ---------------------------------------------------
+            // The crop the backend gets is still a rectangle: the polygon's
+            // bounding box, or the typed size centred on it. Outside the
+            // polygon comes out transparent in the mask.
+            function rectFromPoly() {
+                const iw = state.img.width;
+                const ih = state.img.height;
+                const xs = state.poly.map((p) => p[0] * iw);
+                const ys = state.poly.map((p) => p[1] * ih);
+                let x0 = Math.max(0, Math.floor(Math.min(...xs)));
+                let y0 = Math.max(0, Math.floor(Math.min(...ys)));
+                let x1 = Math.min(iw, Math.max(x0 + 1, Math.ceil(Math.max(...xs))));
+                let y1 = Math.min(ih, Math.max(y0 + 1, Math.ceil(Math.max(...ys))));
+                const [cw, ch] = lockedSize();
+                if (cw) {
+                    const pw = Math.min(iw, cw);
+                    x0 = Math.max(0, Math.min(iw - pw, Math.round((x0 + x1 - pw) / 2)));
+                    x1 = x0 + pw;
+                }
+                if (ch) {
+                    const ph = Math.min(ih, ch);
+                    y0 = Math.max(0, Math.min(ih - ph, Math.round((y0 + y1 - ph) / 2)));
+                    y1 = y0 + ph;
+                }
+                state.rect = {
+                    x: x0 / iw, y: y0 / ih, w: (x1 - x0) / iw, h: (y1 - y0) / ih,
+                    px: [x0, y0, x1, y1],
+                };
+            }
+
+            function toNode(points) {
+                const { bx, by, bw, bh } = state.box;
+                return points.map(([x, y]) => [bx + x * bw, by + y * bh]);
+            }
+
+            function insidePoly(px, py, pts) {
+                let inside = false;
+                for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+                    const [xi, yi] = pts[i];
+                    const [xj, yj] = pts[j];
+                    if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) {
+                        inside = !inside;
+                    }
+                }
+                return inside;
+            }
+
+            // Ramer-Douglas-Peucker: a lasso records a point every few pixels;
+            // keep only the ones that change the shape.
+            function simplify(pts, eps) {
+                if (pts.length < 3) return pts;
+                const [ax, ay] = pts[0];
+                const [bx, by] = pts[pts.length - 1];
+                const len = Math.hypot(bx - ax, by - ay) || 1;
+                let far = 0;
+                let idx = 0;
+                for (let i = 1; i < pts.length - 1; i++) {
+                    const d = Math.abs((bx - ax) * (ay - pts[i][1]) - (ax - pts[i][0]) * (by - ay)) / len;
+                    if (d > far) {
+                        far = d;
+                        idx = i;
+                    }
+                }
+                if (far <= eps) return [pts[0], pts[pts.length - 1]];
+                return simplify(pts.slice(0, idx + 1), eps).slice(0, -1).concat(simplify(pts.slice(idx), eps));
+            }
+
+            // A lasso ends where it started, which leaves RDP a zero-length
+            // chord to measure from; split at the point farthest from the start.
+            function simplifyLoop(pts, eps) {
+                const dist = (p) => Math.hypot(p[0] - pts[0][0], p[1] - pts[0][1]);
+                let far = 0;
+                for (let i = 1; i < pts.length; i++) if (dist(pts[i]) > dist(pts[far])) far = i;
+                return simplify(pts.slice(0, far + 1), eps).slice(0, -1).concat(simplify(pts.slice(far), eps));
+            }
+
+            function polyHitTest(px, py) {
+                if (!state.poly || !state.box) return { mode: "new" };
+                const handle = ui().handle;
+                const pts = toNode(state.poly);
+                for (const [i, [vx, vy]] of pts.entries()) {
+                    if (Math.abs(px - vx) <= handle && Math.abs(py - vy) <= handle) {
+                        return { mode: "vertex", index: i };
+                    }
+                }
+                if (insidePoly(px, py, pts)) return { mode: "move" };
+                return { mode: "new" };
+            }
+
+            function finishPoly(points) {
+                state.draft = null;
+                state.hover = null;
+                if (points.length < 3) return;
+                state.poly = points;
+                rectFromPoly();
+                syncCrop();
+            }
+
+            function polyMouse(event, t, px, py, widget) {
+                const { bx, by, bw, bh } = state.box;
+                const norm = (x, y) => [
+                    Math.max(0, Math.min(1, (x - bx) / bw)),
+                    Math.max(0, Math.min(1, (y - by) / bh)),
+                ];
+
+                if (t === "pointerdown" || t === "mousedown") {
+                    if (px < bx || px > bx + bw || py < by || py > by + bh) return false;
+                    if (state.draft) {
+                        // Clicking out a polygon: the first point, or the last
+                        // one again (a double-click), closes it.
+                        const pts = toNode(state.draft);
+                        const near = ([vx, vy]) =>
+                            Math.abs(px - vx) <= ui().handle && Math.abs(py - vy) <= ui().handle;
+                        if (near(pts[0]) || near(pts[pts.length - 1])) {
+                            if (state.draft.length >= 3) finishPoly(state.draft);
+                        } else {
+                            state.draft.push(norm(px, py));
+                        }
+                        widget.triggerDraw?.();
+                        return true;
+                    }
+                    const hit = polyHitTest(px, py);
+                    state.drag = {
+                        ...hit, startX: px, startY: py, moved: false,
+                        orig: state.poly?.map((p) => [...p]),
+                        lasso: [norm(px, py)],
+                    };
+                    if (event.target?.style) {
+                        event.target.style.cursor =
+                            hit.mode === "move" ? "grabbing" : hit.mode === "vertex" ? "move" : "crosshair";
+                    }
+                    return true;
+                }
+
+                const drag = state.drag;
+                if (!drag) return false;
+
+                if (t === "pointermove" || t === "mousemove") {
+                    if (Math.abs(px - drag.startX) + Math.abs(py - drag.startY) > 2) drag.moved = true;
+                    if (drag.mode === "new" && drag.moved) {
+                        const [lx, ly] = toNode([drag.lasso[drag.lasso.length - 1]])[0];
+                        if (Math.hypot(px - lx, py - ly) >= 2) drag.lasso.push(norm(px, py));
+                        state.draft = drag.lasso;
+                    } else if (drag.mode === "vertex") {
+                        state.poly[drag.index] = norm(px, py);
+                        rectFromPoly();
+                    } else if (drag.mode === "move") {
+                        // Keep every vertex on the image.
+                        const xs = drag.orig.map((p) => p[0]);
+                        const ys = drag.orig.map((p) => p[1]);
+                        const dx = Math.max(-Math.min(...xs), Math.min(1 - Math.max(...xs), (px - drag.startX) / bw));
+                        const dy = Math.max(-Math.min(...ys), Math.min(1 - Math.max(...ys), (py - drag.startY) / bh));
+                        state.poly = drag.orig.map(([x, y]) => [x + dx, y + dy]);
+                        rectFromPoly();
+                    }
+                    widget.triggerDraw?.();
+                    return true;
+                }
+
+                if (t === "pointerup" || t === "mouseup") {
+                    if (drag.mode === "new") {
+                        if (drag.moved) {
+                            finishPoly(simplifyLoop(toNode(drag.lasso), 1.5).map(([x, y]) => norm(x, y)));
+                        } else if (state.poly) {
+                            // Click outside the polygon clears it, like the rectangle.
+                            state.poly = null;
+                            state.rect = null;
+                        } else {
+                            state.draft = [drag.lasso[0]];
+                            state.hover = [px, py];
+                        }
+                    }
+                    state.drag = null;
+                    if (event.target?.style) event.target.style.cursor = "";
+                    syncCrop();
+                    widget.triggerDraw?.();
+                    return true;
+                }
+                return false;
             }
 
             // Returns [w, h] after the max_megapixels cap, or null if it
@@ -346,18 +546,33 @@ app.registerExtension({
                         const sw = state.rect.w * bw;
                         const sh = state.rect.h * bh;
 
+                        const pts = state.poly && toNode(state.poly);
                         // Dim everything outside the selection.
                         ctx.beginPath();
                         ctx.rect(bx, by, bw, bh);
-                        ctx.rect(sx, sy, sw, sh);
+                        if (pts) {
+                            pts.forEach(([vx, vy], i) => (i ? ctx.lineTo(vx, vy) : ctx.moveTo(vx, vy)));
+                            ctx.closePath();
+                        } else {
+                            ctx.rect(sx, sy, sw, sh);
+                        }
                         ctx.fillStyle = "rgba(0,0,0,0.55)";
                         ctx.fill("evenodd");
 
                         ctx.strokeStyle = "#4af";
                         ctx.lineWidth = 1;
-                        ctx.strokeRect(sx, sy, sw, sh);
+                        if (pts) {
+                            ctx.stroke();
+                            // The rectangle actually output, around the polygon.
+                            ctx.setLineDash([4, 3]);
+                            ctx.strokeStyle = "rgba(68,170,255,0.6)";
+                            ctx.strokeRect(sx, sy, sw, sh);
+                            ctx.setLineDash([]);
+                        } else {
+                            ctx.strokeRect(sx, sy, sw, sh);
+                        }
                         ctx.fillStyle = "#4af";
-                        for (const [hx, hy] of [
+                        for (const [hx, hy] of pts || [
                             [sx, sy], [sx + sw, sy], [sx, sy + sh], [sx + sw, sy + sh],
                         ]) {
                             ctx.fillRect(hx - 2.5, hy - 2.5, 5, 5);
@@ -406,6 +621,22 @@ app.registerExtension({
                                 ],
                                 ty
                             );
+                        }
+                    }
+
+                    if (state.draft && !lowQuality) {
+                        const pts = toNode(state.draft);
+                        ctx.beginPath();
+                        pts.forEach(([vx, vy], i) => (i ? ctx.lineTo(vx, vy) : ctx.moveTo(vx, vy)));
+                        if (state.hover && !state.drag) ctx.lineTo(...state.hover);
+                        ctx.strokeStyle = "#4af";
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                        if (!state.drag) {
+                            ctx.fillStyle = "#4af";
+                            for (const [vx, vy] of pts) ctx.fillRect(vx - 2.5, vy - 2.5, 5, 5);
+                            // The first point is the one to click to close.
+                            ctx.strokeRect(pts[0][0] - 4.5, pts[0][1] - 4.5, 9, 9);
                         }
                     }
 
@@ -460,6 +691,7 @@ app.registerExtension({
                     const { bx, by, bw, bh } = state.box;
                     const clampX = (v) => Math.max(bx, Math.min(bx + bw, v));
                     const clampY = (v) => Math.max(by, Math.min(by + bh, v));
+                    if (isPoly()) return polyMouse(event, t, px, py, this);
 
                     if (t === "pointerdown" || t === "mousedown") {
                         // Ignore clicks on the letterbox area outside the
@@ -612,6 +844,13 @@ app.registerExtension({
                 if (px < bx || px > bx + bw || py < by || py > by + bh) {
                     return cursorOutside(px, py);
                 }
+                if (isPoly()) {
+                    if (state.draft) return "crosshair";
+                    const hit = polyHitTest(px, py);
+                    if (hit.mode === "vertex") return "move";
+                    if (hit.mode === "move") return "grab";
+                    return state.poly ? "not-allowed" : "crosshair";
+                }
                 const hit = hitTest(px, py);
                 if (hit.mode === "resize") {
                     return hit.corner === "nw" || hit.corner === "se"
@@ -631,6 +870,10 @@ app.registerExtension({
                 prevMouseMove?.apply(this, arguments);
                 const el = graphCanvas?.canvas || app.canvas?.canvas;
                 if (el && !state.drag) el.style.cursor = cursorFor(pos[0], pos[1]);
+                if (state.draft) {
+                    state.hover = [pos[0], pos[1]];
+                    node.setDirtyCanvas(true, false);
+                }
             };
             const prevMouseLeave = node.onMouseLeave;
             node.onMouseLeave = function () {
@@ -709,7 +952,12 @@ app.registerExtension({
                 const prevSizeCallback = sizeWidget.callback;
                 sizeWidget.callback = function () {
                     const r = prevSizeCallback?.apply(this, arguments);
-                    if (applyLockedSize()) {
+                    if (isPoly()) {
+                        if (state.poly && state.img) {
+                            rectFromPoly();
+                            syncCrop();
+                        }
+                    } else if (applyLockedSize()) {
                         syncCrop();
                     } else if (state.rect) {
                         // Lock cleared: drop the exact box but keep the
@@ -717,6 +965,24 @@ app.registerExtension({
                         delete state.rect.px;
                         syncCrop();
                     }
+                    editorWidget.triggerDraw?.();
+                    node.setDirtyCanvas(true, true);
+                    return r;
+                };
+            }
+
+            if (shapeWidget) {
+                const prevShapeCallback = shapeWidget.callback;
+                shapeWidget.callback = function () {
+                    const r = prevShapeCallback?.apply(this, arguments);
+                    // polygon-white <-> polygon-transparent keeps the polygon;
+                    // crossing to or from rectangle starts over.
+                    if (!!state.poly !== isPoly()) {
+                        state.rect = null;
+                        state.poly = null;
+                        state.draft = null;
+                    }
+                    syncCrop();
                     editorWidget.triggerDraw?.();
                     node.setDirtyCanvas(true, true);
                     return r;
@@ -751,7 +1017,10 @@ app.registerExtension({
                     // doesn't already match -- otherwise restoring a saved
                     // workflow would re-centre a crop that was already correct.
                     const [lkw, lkh] = lockedSize();
-                    if (lkw || lkh) {
+                    if (state.poly) {
+                        rectFromPoly();
+                        syncCrop();
+                    } else if (lkw || lkh) {
                         const [curW, curH] = state.rect ? cropDims() : [0, 0];
                         if ((lkw && curW !== lkw) || (lkh && curH !== lkh)) {
                             if (applyLockedSize()) syncCrop();
@@ -785,6 +1054,8 @@ app.registerExtension({
             imageWidget.callback = function () {
                 const r = prevCallback?.apply(this, arguments);
                 state.rect = null;
+                state.poly = null;
+                state.draft = null;
                 syncCrop();
                 // Keep the node's current size — the preview letterboxes.
                 loadImage();
@@ -796,12 +1067,7 @@ app.registerExtension({
             const prevOnConfigure = node.onConfigure;
             node.onConfigure = function () {
                 const r = prevOnConfigure?.apply(this, arguments);
-                try {
-                    const saved = cropWidget.value ? JSON.parse(cropWidget.value) : null;
-                    state.rect = saved && saved.w > 0 && saved.h > 0 ? saved : null;
-                } catch (e) {
-                    state.rect = null;
-                }
+                restoreCrop();
                 dbg("configured; crop:", cropWidget.value || "(none)", "image:", imageWidget.value);
                 loadImage();
                 return r;

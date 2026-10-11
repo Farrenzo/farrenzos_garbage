@@ -25,7 +25,7 @@ import hashlib
 import numpy as np
 import folder_paths
 import node_helpers
-from PIL import Image, ImageOps, ImageSequence
+from PIL import Image, ImageDraw, ImageOps, ImageSequence
 
 
 def _parse_crop(crop, width, height, crop_width=0, crop_height=0):
@@ -84,6 +84,15 @@ def _parse_crop(crop, width, height, crop_width=0, crop_height=0):
     return (x0, y0, x1, y1)
 
 
+def _parse_poly(crop, width, height):
+    """Polygon vertices in pixels from the editor's normalized "poly", or None."""
+    try:
+        pts = [(float(x) * width, float(y) * height) for x, y in json.loads(crop)["poly"]]
+    except (ValueError, KeyError, TypeError):
+        return None
+    return pts if len(pts) >= 3 else None
+
+
 class FG_LoadImage:
     def __init__(self):
         self.NODE_NAME = "Load Image"
@@ -91,7 +100,12 @@ class FG_LoadImage:
     @classmethod
     def INPUT_TYPES(s):
         input_dir = folder_paths.get_input_directory()
-        files = [f for f in os.listdir(input_dir) if os.path.isfile(os.path.join(input_dir, f))]
+        files = [
+            os.path.relpath(os.path.join(root, f), input_dir).replace(os.sep, "/")
+            for root, _, filenames in os.walk(input_dir)
+            for f in filenames
+            if os.path.isfile(os.path.join(root, f))
+        ]
         files = folder_paths.filter_files_content_types(files, ["image"])
         return {
             "required": {
@@ -110,6 +124,15 @@ class FG_LoadImage:
                         "tooltip": "Exact crop height in pixels. 0 = drag freely. "
                                    "Lock one axis only and the other stays draggable, "
                                    "snapping to the locked value on release."}),
+                    "crop_shape": (["rectangle", "polygon-transparent", "polygon-white"], {
+                        "default": "rectangle",
+                        "tooltip": "polygon: drag to lasso, or click points and click the "
+                                   "first one (or double-click) to close. The image is "
+                                   "cropped to the polygon's bounding box (or the typed "
+                                   "size) and everything outside the polygon is whited out. "
+                                   "polygon-transparent also outputs RGBA with it at alpha 0, "
+                                   "for models that take transparency; nodes that drop the "
+                                   "alpha still see white."}),
                 },
         }
 
@@ -138,7 +161,7 @@ class FG_LoadImage:
                 return candidate
         return path
 
-    def load_image(self, image, crop="", crop_width=0, crop_height=0):
+    def load_image(self, image, crop="", crop_width=0, crop_height=0, crop_shape="rectangle"):
         image_path = self._resolve_path(image)
         img = node_helpers.pillow(Image.open, image_path)
 
@@ -186,6 +209,16 @@ class FG_LoadImage:
         # Outside the branch above: the crop used to sit in the single-image
         # arm only, so animated GIFs and multi-page TIFFs came out uncropped.
         src_w, src_h = w, h
+        poly = _parse_poly(crop, src_w, src_h) if crop_shape != "rectangle" else None
+        if poly is not None:
+            canvas = Image.new("L", (src_w, src_h))
+            ImageDraw.Draw(canvas).polygon(poly, fill=255)
+            outside = 1.0 - torch.from_numpy(np.array(canvas).astype(np.float32) / 255.0)
+            if output_mask.shape[1:] == (src_h, src_w):
+                output_mask = torch.maximum(output_mask, outside)
+            else:
+                output_mask = outside.expand(output_image.shape[0], -1, -1)
+            output_image = output_image + (1.0 - output_image) * outside[..., None]
         box = _parse_crop(crop, output_image.shape[2], output_image.shape[1],
                           crop_width, crop_height)
         if box is not None:
@@ -200,11 +233,13 @@ class FG_LoadImage:
             # the crop. Anything sizing a latent off them was getting the
             # uncropped file size before.
             w, h = x1 - x0, y1 - y0
+        if poly is not None and crop_shape == "polygon-transparent":
+            output_image = torch.cat([output_image, (1.0 - output_mask)[..., None]], dim=-1)
 
         return (output_image, output_mask, w, h)
 
     @classmethod
-    def IS_CHANGED(s, image, crop="", crop_width=0, crop_height=0):
+    def IS_CHANGED(s, image, crop="", crop_width=0, crop_height=0, crop_shape="rectangle"):
         image_path = s._resolve_path(image)
         m = hashlib.sha256()
         with open(image_path, 'rb') as f:
@@ -213,11 +248,11 @@ class FG_LoadImage:
         # Hashing the file bytes alone meant adjusting the selection and
         # re-queueing replayed the cached tensors -- the node looked like it
         # was ignoring you.
-        m.update(f"|{crop}|{crop_width}|{crop_height}".encode("utf-8"))
+        m.update(f"|{crop}|{crop_width}|{crop_height}|{crop_shape}".encode("utf-8"))
         return m.digest().hex()
 
     @classmethod
-    def VALIDATE_INPUTS(s, image, crop="", crop_width=0, crop_height=0):
+    def VALIDATE_INPUTS(s, image, crop="", crop_width=0, crop_height=0, crop_shape="rectangle"):
         # Same resolution load_image uses, so validation can't reject a
         # clipspace file the loader would have found.
         if not os.path.isfile(s._resolve_path(image)):

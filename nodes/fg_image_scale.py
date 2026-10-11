@@ -87,7 +87,7 @@ import numpy as np
 from PIL import Image
 import folder_paths
 import comfy.utils as c_utils
-import comfy.model_management
+import comfy.model_management as comfy_mm
 from ._fg_helperfunctions import (
     log,
     tensor2pil,
@@ -248,7 +248,7 @@ class FG_ImageScaler:
 
     def __init__(self):
         self.NODE_NAME = "Image Scale"
-        self.device = comfy.model_management.intermediate_device()
+        self.device = comfy_mm.intermediate_device()
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -355,13 +355,13 @@ class FG_ImageScaler:
 
     def _upscale_w_model(self, model, pic):
         """One pass of the model, tiled, halving the tile on OOM."""
-        device = comfy.model_management.get_torch_device()
-        memory_required = comfy.model_management.module_size(model.model)
+        device = comfy_mm.get_torch_device()
+        memory_required = comfy_mm.module_size(model.model)
         memory_required += (512 * 512 * 3) * pic.element_size() * max(model.scale, 1.0) * 384.0
         # The 384.0 is an estimate of how much some of these models take,
         # TODO: make it more accurate
         memory_required += pic.nelement() * pic.element_size()
-        comfy.model_management.free_memory(memory_required, device)
+        comfy_mm.free_memory(memory_required, device)
         model.to(device)
         in_img = pic.movedim(-1, -3).to(device)
 
@@ -380,7 +380,7 @@ class FG_ImageScaler:
                         overlap=overlap, upscale_amount=model.scale, pbar=pbar)
                     oom = False
                 except Exception as e:
-                    comfy.model_management.raise_non_oom(e)
+                    comfy_mm.raise_non_oom(e)
                     tile //= 2
                     if tile < 128:
                         raise e
@@ -678,3 +678,43 @@ class FG_ImageScaler:
             message_type="finish",
         )
         return (image_batch, mask_batch, latent, out_width, out_height)
+
+
+class FG_CropFactorPadding:
+    """Turns a mask into a padding value (pixels) so the crop around the mask
+    scales with the mask size, the same way crop factor works in Impact Pack.
+
+    crop size = mask bounding box size * cropfactor
+    padding per side = longer bbox side * (cropfactor - 1) / 2
+    The result is never lower than minpadding.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "mask": ("MASK",),
+                "cropfactor": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 10.0, "step": 0.05}),
+                "minpadding": ("INT", {"default": 32, "min": 0, "max": 4096, "step": 1}),
+            }
+        }
+
+    RETURN_TYPES = ("INT",)
+    RETURN_NAMES = ("padding",)
+    FUNCTION = "calc"
+    CATEGORY = "Farrenzo's Garbage/Image/Utils"
+
+    def calc(self, mask, cropfactor, minpadding):
+        m = mask
+        if m.dim() == 2:
+            m = m.unsqueeze(0)
+        # union of all masks in the batch
+        union = m.amax(dim=0)
+        ys, xs = torch.where(union > 0)
+        if ys.numel() == 0:
+            return (int(minpadding),)
+        bh = int(ys.max() - ys.min() + 1)
+        bw = int(xs.max() - xs.min() + 1)
+        side = max(bw, bh)
+        pad = int(round(side * (float(cropfactor) - 1.0) / 2.0))
+        return (max(pad, int(minpadding)),)

@@ -95,25 +95,16 @@ This node pack firmly believes in you downloading things for yourself. Know what
 
 Restart comfy & voila.
 
-## Setting Up Dynamic LoRA Loader
+## Resource Library (LoRA trigger words, previews, recommended settings)
 
-After the initial run of comfy with this node pack, inside your LoRA's folder you will find a folder called `.lora_previews`. You can move this folder to any LoRA folder that comfy recognizes. If you have a central location for all your models, and they are properly listed in comfy's `extra_model_paths.yaml` file, the folder will be visible. Inside `.lora_previews` you will find a prefilled `_fg_dynamic_lora_loader.json` index file. Edit that index file with trigger words to your hearts content. Generate a few images for the preview. Use square 512*512 webp images and save them in the previews folder under the **exact** same name as the LoRA. So if your LoRA is called `something_v1.safetensors` the preview image should be called `something_v1.jpg/webp/png/etc`. Webp is recommended due to it's tiny size.
+Model info lives in a SQLite library keyed by each file's SHA256, so renaming or moving a model keeps its info and deleted models stay on record as missing.
 
-```JSON
-{
-    "some_lora_name_at_top_level_of_lora_folder.safetensors":{
-        "trigger_words": "trigger_word_1, trigger_word_2, trigger_word_3, long sentence"
-    },
-    "some_folder_name\\some_lora_name.safetensors":{
-        "trigger_words": "trigger_word_1, trigger_word_2, trigger_word_3, something descriptive"
-    },
-    "some_other_folder_name\\some_other_lora_name.safetensors":{
-        "trigger_words": "trigger_word_1, trigger_word_2, trigger_word_3, I've ran out of creativity"
-    }
-}
-```
-Tip: you can use this same file to save lora info like site downloaded, SHA256, etc. The node only cares about the trigger word. Storing LoRA sha256 makes it easy to search for later and compare if you have that file. No restart required. It's all javascript so a refresh will show you changes instantly.
+1. Set `"RESOURCE_LIBRARY_DIR"` in `_env.json` to the folder that should hold the library, e.g. your central models folder (`"X:/xModels/Models"`). It defaults to ComfyUI's `models` folder.
+2. Run the **🗑️ Resource Manager** node (connect its report to Show Text). It hashes every model ComfyUI can see, including `extra_model_paths.yaml` folders. Only new or changed files are hashed on later runs.
+3. Right-click any model loader › **📝 Edit info** to set base model, source URL, trigger words, notes, recommended settings and a preview image (click, drop or paste). The Multi-LoRA Loader shows a submenu with one item per LoRA.
+
+Previews are saved in `<library>/.previews/`, mirroring the model folders with readable names, e.g. `.previews/loras/Anima/Anima_Style_Meteor.webp`. Square 512×512 webp is recommended. The Multi-LoRA Loader shows previews and trigger words; checkpoint and diffusion model loaders show the preview and recommended settings under their widgets.
 
 ### Notice
-1. The `aiohttp` call in the beginning is only so that javascript may communicate with the LoRA loader node. Nothing will be downloaded on your behalf.
+1. The `/fg/library` routes only let the browser read and edit your local resource library. Nothing is downloaded or sent anywhere.
 

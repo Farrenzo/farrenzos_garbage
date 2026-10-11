@@ -1,0 +1,1068 @@
+"""EasyControl image conditioning for ComfyUI — KSampler-compatible.
+
+This is a from-scratch reimplementation of anima_lora's EasyControl *inference*
+path, rewritten against ComfyUI's native Anima/Cosmos DiT backbone
+(``comfy/ldm/cosmos/predict2.py``) so it runs under the stock KSampler with no
+dedicated sampler node.
+
+Why a reimplementation rather than vendoring anima_lora's network module:
+EasyControl reaches *inside* each DiT block's self-attention (it concatenates a
+reference-image key/value stream into the target's attention). anima_lora's
+training DiT uses a **fused** ``self_attn.qkv_proj`` (D->3D) and an
+``adaln_fused_down`` / ``adaln_up_*`` AdaLN-LoRA topology; ComfyUI's backbone
+uses **split** ``q_proj`` / ``k_proj`` / ``v_proj`` and ``adaln_modulation_*``
+Sequentials. So the in-block splice cannot be reused as-is.
+
+Correctness hinge: the trained cond-LoRA delta is a fused ``D->3D`` tensor whose
+three chunks are (q, k, v) in that order — exactly the split layout ComfyUI
+uses. The *base* projection weights are numerically identical between the two
+DiTs (same pretrained Anima model, just fused-vs-split layout — see anima_lora
+``networks/attn_fuse.py``), so adding the sliced fused delta onto ComfyUI's
+split q/k/v projections reproduces what training saw.
+
+Mechanism, per denoising step:
+  - The reference image is VAE-encoded once (node side) and the cond stream is
+    walked once through all blocks (lazily, on the first DiT forward) to produce
+    a per-block (cond_k, cond_v) cache. The cond stream is deterministic across
+    steps (cond t-embedding at t=0, frozen weights), so this is computed once
+    and reused for every step and every CFG branch.
+  - Each block's self-attention is replaced by an *extended* attention over
+    ``[target_k ; cond_k]`` / ``[target_v ; cond_v]`` with a per-block additive
+    logit bias ``b_cond`` on the cond columns (the trained gate). Cross-attn and
+    MLP run baseline. This extended attention runs on flash-attn (via an exact
+    LSE decomposition of the joint softmax) whenever ``flash_attn`` is
+    installed; otherwise it uses a portable mask-free SDPA path that folds the
+    bias into an appended head dimension so the call stays flash-backend
+    eligible. See ``_extended_self_attn``.
+
+Robustness: the per-block forward closures resolve their block from
+``state.live_blocks`` (refreshed by the pre-hook from the live diffusion_model
+each forward) rather than capturing a block reference, so a downstream node that
+rebuilds the DiT (e.g. block-compile) doesn't strand the patch on a dead
+instance — same hazard the in-tree Anima nodes document.
+"""
+
+
+
+from __future__ import annotations
+
+import logging
+import math
+import weakref
+import folder_paths
+from collections import OrderedDict
+from typing import Optional
+
+import torch
+import torch.nn.functional as F
+from einops import rearrange
+
+logger = logging.getLogger(__name__)
+
+# Every EasyControlState ever applied (weak — dead model outputs drop out).
+# Used to evict stale cond KV caches before building a new one: when the user
+# swaps the reference image, ComfyUI's execution cache can keep the previous
+# MODEL output (and its ~0.9 GB cond cache) alive next to the new one — the
+# classic image-swap OOM. See ``_build_cond_kv``.
+_LIVE_STATES: "weakref.WeakSet[EasyControlState]" = weakref.WeakSet()
+
+# ComfyUI backbone helpers. Imported at module load — this node only makes sense
+# inside a ComfyUI install, where these are always importable.
+#
+# Cosmos/Anima rope application. ComfyUI shipped the standalone
+# ``apply_rotary_pos_emb(t, freqs)`` helper from June 2025 until #14181
+# ("Speed up anima a bit on nvidia", in 0.24.0), which deleted the function and
+# inlined its two call sites as ``comfy.quant_ops.ck.apply_rope_split_half(q, k,
+# rope_emb)``. The ``rope_emb`` *format* is unchanged across that refactor — only
+# the helper moved — so we keep a vendored copy of the original (numerically
+# identical, split-half convention) and prefer the in-tree symbol when present.
+try:  # ComfyUI < 0.24
+    from comfy.ldm.cosmos.predict2 import apply_rotary_pos_emb as _comfy_apply_rope
+except ImportError:  # ComfyUI >= 0.24 — standalone helper removed
+    _comfy_apply_rope = None
+
+# Optional flash-attention fast path for the extended self-attention. Used
+# whenever ``flash_attn`` is importable — this is the node's own internal
+# attention choice, independent of ComfyUI's global ``--use-flash-attention``
+# launch flag (which only selects the backend for *comfy's* attention calls).
+# If the kernel errors at runtime (e.g. an unsupported GPU arch), the first
+# failure permanently drops to the SDPA fallback, which works everywhere.
+try:
+    from flash_attn import flash_attn_func as _flash_attn_func
+except ImportError:
+    _flash_attn_func = None
+
+_FLASH_ENABLED_CACHE: Optional[bool] = None
+
+
+def _flash_ext_enabled() -> bool:
+    """True iff flash-attn is importable (and hasn't failed at runtime)."""
+    global _FLASH_ENABLED_CACHE
+    if _FLASH_ENABLED_CACHE is None:
+        _FLASH_ENABLED_CACHE = _flash_attn_func is not None
+        if _FLASH_ENABLED_CACHE:
+            logger.info("EasyControl: flash-attention extended-attn path enabled.")
+    return _FLASH_ENABLED_CACHE
+
+
+def _flash_ext_disable(reason: BaseException) -> None:
+    global _FLASH_ENABLED_CACHE
+    _FLASH_ENABLED_CACHE = False
+    logger.warning(
+        "EasyControl: flash-attn extended-attn failed (%s); using the SDPA "
+        "fallback from now on.", reason,
+    )
+
+
+def apply_rotary_pos_emb(t: torch.Tensor, freqs: torch.Tensor) -> torch.Tensor:
+    """Apply cosmos split-half RoPE to a single [B, S, H, D] tensor.
+
+    Vendored from ComfyUI's pre-0.24 ``comfy.ldm.cosmos.predict2`` so the node
+    survives the helper's removal. The newer in-tree path applies rope to q and
+    k jointly (``apply_rope_split_half``); this per-tensor form is what the
+    extended-attention splice needs (cond q/k are produced separately from the
+    target stream), and it consumes the same ``freqs`` layout.
+    """
+    if _comfy_apply_rope is not None:
+        return _comfy_apply_rope(t, freqs)
+    t_ = t.reshape(*t.shape[:-1], 2, -1).movedim(-2, -1).unsqueeze(-2).float()
+    t_out = freqs[..., 0] * t_[..., 0] + freqs[..., 1] * t_[..., 1]
+    t_out = t_out.movedim(-1, -2).reshape(*t.shape).type_as(t)
+    return t_out
+
+
+# ---------------------------------------------------------------------------
+# Weight loading
+# ---------------------------------------------------------------------------
+
+
+def _load_weights_and_meta(path: str):
+    from safetensors import safe_open
+    from safetensors.torch import load_file
+
+    sd = load_file(path)
+    meta = {}
+    if path.endswith(".safetensors"):
+        with safe_open(path, framework="pt") as f:
+            meta = f.metadata() or {}
+    return sd, meta
+
+
+class _LoRA:
+    """A single ``D->r->out`` cond-LoRA delta with an fp32 bottleneck.
+
+    Mirrors anima_lora ``networks/methods/easycontrol.py::_LoRAProj``: the
+    bottleneck runs in fp32 for bf16 stability, the ``alpha/r`` scale is folded
+    in here, and the caller-side ``cond_scale * strength`` is applied via
+    ``eff_scale`` at the call site.
+
+    ``inv_scale`` is the per-input-channel factor of a channel-scaled checkpoint
+    (anima_lora SmoothQuant-style rebalance: the calibration scale ``s`` is
+    absorbed into ``lora_down`` at init and ``inv_scale = 1/s`` is stored so the
+    forward stays ``x @ down`` in effect). The trained function is
+    ``up(down((x * inv_scale)))`` — skipping it mis-scales every input channel
+    by ``s``.
+    """
+
+    __slots__ = ("down", "up", "scale", "inv_scale")
+
+    def __init__(
+        self,
+        down: torch.Tensor,
+        up: torch.Tensor,
+        alpha_over_r: float,
+        inv_scale: Optional[torch.Tensor] = None,
+    ):
+        self.down = down
+        self.up = up
+        self.scale = alpha_over_r
+        self.inv_scale = inv_scale
+
+    def to(self, device, dtype):
+        # Keep master copies in fp32 (the forward casts to fp32 anyway).
+        self.down = self.down.to(device=device, dtype=torch.float32)
+        self.up = self.up.to(device=device, dtype=torch.float32)
+        if self.inv_scale is not None:
+            self.inv_scale = self.inv_scale.to(device=device, dtype=torch.float32)
+        return self
+
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        h = x.float()
+        if self.inv_scale is not None:
+            h = h * self.inv_scale
+        h = F.linear(h, self.down)
+        h = F.linear(h, self.up)
+        return (h * self.scale).to(x.dtype)
+
+
+class EasyControlState:
+    """Holds the trained cond-LoRA tensors, the reference latent, and the lazily
+    built per-block KV cache. One per applied node instance; carried on the
+    ModelPatcher via a strong ref so it isn't GC'd."""
+
+    def __init__(self, sd: dict, meta: dict, strength: float,
+                 cond_scale_override: Optional[float] = None):
+        self.num_blocks = int(meta.get("ss_num_blocks", 28))
+        self.r = int(meta.get("ss_cond_lora_dim", 16))
+        self.alpha = float(meta.get("ss_cond_lora_alpha", float(self.r)))
+        self.apply_ffn = bool(int(meta.get("ss_apply_ffn_lora", 1)))
+        cond_scale = (
+            float(cond_scale_override)
+            if cond_scale_override is not None
+            else float(meta.get("ss_cond_scale", 1.0))
+        )
+        # alpha/r folds into each _LoRA; cond_scale * strength is the call-site
+        # effective scale (matches anima_lora get_effective_scale + multiplier).
+        a_over_r = self.alpha / self.r if self.r > 0 else 1.0
+        self.eff_scale = cond_scale * float(strength)
+        self.strength = float(strength)
+
+        consumed = set()
+
+        def grab(prefix, idx, alpha_over_r=a_over_r):
+            dk = f"{prefix}.{idx}.lora_down.weight"
+            uk = f"{prefix}.{idx}.lora_up.weight"
+            sk = f"{prefix}.{idx}.inv_scale"
+            d, u, inv = sd.get(dk), sd.get(uk), sd.get(sk)
+            if d is None or u is None:
+                return None
+            consumed.update((dk, uk))
+            if inv is not None:
+                consumed.add(sk)
+            return _LoRA(d, u, alpha_over_r, inv_scale=inv)
+
+        self.lora_qkv = [grab("cond_lora_qkv", i) for i in range(self.num_blocks)]
+        self.lora_o = [grab("cond_lora_o", i) for i in range(self.num_blocks)]
+        if self.apply_ffn:
+            self.lora_ffn1 = [grab("cond_lora_ffn1", i) for i in range(self.num_blocks)]
+            self.lora_ffn2 = [grab("cond_lora_ffn2", i) for i in range(self.num_blocks)]
+        else:
+            self.lora_ffn1 = [None] * self.num_blocks
+            self.lora_ffn2 = [None] * self.num_blocks
+
+        # b_cond stored as a ParameterList → keys "b_cond.{i}" (0-d tensors).
+        self.b_cond = []
+        for i in range(self.num_blocks):
+            b = sd.get(f"b_cond.{i}")
+            if b is not None:
+                consumed.add(f"b_cond.{i}")
+            self.b_cond.append(
+                (b if b is not None else torch.tensor(-10.0)).float().reshape(())
+            )
+
+        if any(q is None for q in self.lora_qkv):
+            missing = [i for i, q in enumerate(self.lora_qkv) if q is None]
+            raise ValueError(
+                f"EasyControl checkpoint missing cond_lora_qkv for blocks {missing}. "
+                "Is this an EasyControl (networks.methods.easycontrol) checkpoint?"
+            )
+
+        # ---- target-stream adaln LoRA (train_adaln checkpoints) ----
+        # Per-block, per-branch delta on the AdaLN-LoRA up-projections
+        # (anima_lora ``adaln_up_{self_attn,cross_attn,mlp}``, 256 -> 3D). Comfy's
+        # split layout is ``adaln_modulation_{branch} = Sequential(SiLU,
+        # Linear(D->256), Linear(256->3D))`` with identical numerics, so each
+        # delta merges exactly onto ``adaln_modulation_{branch}.2.weight`` as an
+        # ordinary LoRA weight patch (see ``install_easycontrol``). The scale is
+        # ``strength * adaln_alpha / adaln_rank`` — training applies the delta at
+        # ``delta_scale = multiplier``, NOT ``cond_scale * multiplier``.
+        adaln_probe = sd.get("adaln_lora_self_attn.0.lora_down.weight")
+        self.train_adaln = adaln_probe is not None
+        self.adaln_rank = int(adaln_probe.shape[0]) if self.train_adaln else 0
+        adaln_alpha = float(meta.get("ss_adaln_alpha", 0.0))
+        if self.train_adaln and adaln_alpha <= 0.0:
+            # √r law fallback, mirroring anima_lora (alpha<=0 → derive from the
+            # cond LoRA's alpha/dim so alpha/√r stays consistent).
+            adaln_alpha = self.alpha * (self.adaln_rank / max(self.r, 1)) ** 0.5
+        self.adaln_alpha = adaln_alpha
+        self.adaln = {}  # branch -> list[_LoRA | None], for the cond-prefill subtract
+        if self.train_adaln:
+            aa_over_r = adaln_alpha / self.adaln_rank
+            for branch in ("self_attn", "cross_attn", "mlp"):
+                mods = [
+                    grab(f"adaln_lora_{branch}", i, alpha_over_r=aa_over_r)
+                    for i in range(self.num_blocks)
+                ]
+                if any(m is None for m in mods):
+                    missing = [i for i, m in enumerate(mods) if m is None]
+                    raise ValueError(
+                        f"EasyControl checkpoint has adaln_lora keys but is missing "
+                        f"adaln_lora_{branch} for blocks {missing} — truncated checkpoint?"
+                    )
+                self.adaln[branch] = mods
+        elif bool(int(meta.get("ss_train_adaln", 0) or 0)):
+            raise ValueError(
+                "EasyControl checkpoint metadata says ss_train_adaln=1 but no "
+                "adaln_lora_* tensors are present — truncated checkpoint?"
+            )
+
+        # ---- strict key accounting ----
+        # A trained feature this node silently drops degrades output with no
+        # error (this is exactly how un-applied adaln checkpoints produced
+        # garbage) — so refuse checkpoints carrying tensors we don't map.
+        leftover = sorted(set(sd) - consumed)
+        if leftover:
+            shown = ", ".join(leftover[:8]) + (", …" if len(leftover) > 8 else "")
+            raise ValueError(
+                f"EasyControl checkpoint has {len(leftover)} tensor(s) this node "
+                f"does not implement ({shown}). The checkpoint was trained with a "
+                "feature newer than this node — update the node."
+            )
+
+        # Reference latent in *model space* (process_latent_in already applied by
+        # the node). 4D [1, C, H, W]; given a device/dtype at prefill time.
+        self.cond_latent: Optional[torch.Tensor] = None
+        # DiT hidden dim, filled in by install_easycontrol (for cache sizing).
+        self.hidden_dim: int = 0
+
+        # Built lazily on first DiT forward.
+        self.cond_kv_cache: Optional[list] = None
+        self._cache_device = None
+        # Refreshed each forward by the pre-hook from the live diffusion_model.
+        self.live_blocks = None
+        _LIVE_STATES.add(self)
+
+    def _to(self, device, dtype):
+        for lst in (self.lora_qkv, self.lora_o, self.lora_ffn1, self.lora_ffn2,
+                    *self.adaln.values()):
+            for m in lst:
+                if m is not None:
+                    m.to(device, dtype)
+        self.b_cond = [b.to(device=device) for b in self.b_cond]
+
+
+# ---------------------------------------------------------------------------
+# Cond stream prefill (build per-block KV cache)
+# ---------------------------------------------------------------------------
+
+
+def _cond_branch_modulation(seq, emb, adaln_delta, strength):
+    """Modulation for one adaln branch of the *cond* stream.
+
+    Training applies the target-stream adaln delta only on the target side —
+    the cond stream always runs the frozen ``adaln_up_*``. With the delta merged
+    into ``seq[2].weight`` as a weight patch (see ``install_easycontrol``), the
+    live module would leak it into the cond stream, so run the bottleneck
+    stepwise and subtract the merged delta from the up output.
+    """
+    if adaln_delta is None:
+        return seq(emb)
+    h = seq[1](seq[0](emb))  # SiLU -> down: [B, adaln_dim]
+    return seq[2](h) - strength * adaln_delta(h)
+
+
+def _cond_qkv(attn, cond_normed, lora_qkv, eff_scale, rope):
+    """Split-projection cond Q/K/V with the fused LoRA delta sliced into thirds,
+    then per-head norm + RoPE. Returns q, k, v as [B, S, H, D]."""
+    q = attn.q_proj(cond_normed)
+    k = attn.k_proj(cond_normed)
+    v = attn.v_proj(cond_normed)
+    if lora_qkv is not None:
+        dq, dk, dv = (eff_scale * lora_qkv(cond_normed)).chunk(3, dim=-1)
+        q = q + dq
+        k = k + dk
+        v = v + dv
+    h, d = attn.n_heads, attn.head_dim
+    q = rearrange(q, "b s (h d) -> b s h d", h=h, d=d)
+    k = rearrange(k, "b s (h d) -> b s h d", h=h, d=d)
+    v = rearrange(v, "b s (h d) -> b s h d", h=h, d=d)
+    q = attn.q_norm(q)
+    k = attn.k_norm(k)
+    v = attn.v_norm(v)
+    if rope is not None:
+        q = apply_rotary_pos_emb(q, rope)
+        k = apply_rotary_pos_emb(k, rope)
+    return q, k, v
+
+
+def _self_attn_bshd(q, k, v):
+    """Plain self-attention on [B, S, H, D] tensors → [B, S, H, D]."""
+    qt, kt, vt = (t.transpose(1, 2) for t in (q, k, v))  # [B,H,S,D]
+    out = F.scaled_dot_product_attention(qt, kt, vt)
+    return out.transpose(1, 2)
+
+
+@torch.no_grad()
+def _build_cond_kv(dit, state: EasyControlState, device, dtype):
+    """Walk the cond stream once; cache per-block (cond_k, cond_v).
+
+    The cond stream is self-attention only (cross-attn is dropped on the cond
+    side, matching anima_lora's two-stream variant), evolving cond_x block by
+    block exactly as anima_lora ``precompute_cond_kv`` does, but against
+    ComfyUI's split-projection block API.
+    """
+    # Evict caches left by earlier applies (e.g. the previous reference image —
+    # its MODEL output can stay referenced by ComfyUI's execution cache, so its
+    # cond cache would sit next to the one we're about to build). Dropped caches
+    # rebuild lazily if that older model is ever sampled again.
+    dropped = 0
+    for other in list(_LIVE_STATES):
+        if other is not state and other.cond_kv_cache is not None:
+            other.cond_kv_cache = None
+            other._cache_device = None
+            dropped += 1
+    if dropped and device.type == "cuda":
+        torch.cuda.empty_cache()
+        logger.info(f"EasyControl: evicted {dropped} stale cond KV cache(s)")
+
+    state._to(device, dtype)
+    cond_latent = state.cond_latent.to(device=device, dtype=dtype)
+    if cond_latent.ndim == 4:
+        cond_latent = cond_latent.unsqueeze(2)  # [B,C,1,H,W]
+
+    cond_x5d, cond_rope_raw, cond_extra = dit.prepare_embedded_sequence(
+        cond_latent, fps=None, padding_mask=None
+    )
+    cond_x = rearrange(cond_x5d, "b t h w d -> b (t h w) d")
+    if cond_extra is not None:
+        # Anima ships extra_per_block_abs_pos_emb=False, so this is None. If a
+        # future config enables it, the per-block add would need mirroring here.
+        logger.warning(
+            "EasyControl: extra_per_block_abs_pos_emb is set; cond stream does "
+            "not replicate it. Results may drift."
+        )
+    cond_rope = cond_rope_raw.unsqueeze(1).unsqueeze(0) if cond_rope_raw is not None else None
+
+    # cond t-embedding at t=0 — identical to MiniTrainDIT._forward's t path.
+    B = cond_x.shape[0]
+    zeros = torch.zeros(B, 1, device=device, dtype=dtype)
+    cemb, cadaln = dit.t_embedder[1](dit.t_embedder[0](zeros).to(dtype))
+    cemb = dit.t_embedding_norm(cemb)
+
+    eff = state.eff_scale
+    cache = []
+    for idx in range(state.num_blocks):
+        block = dit.blocks[idx]
+        attn = block.self_attn
+
+        d_sa = state.adaln["self_attn"][idx] if state.train_adaln else None
+        d_mlp = state.adaln["mlp"][idx] if state.train_adaln else None
+        if block.use_adaln_lora:
+            s_sa, sc_sa, g_sa = (
+                _cond_branch_modulation(
+                    block.adaln_modulation_self_attn, cemb, d_sa, state.strength
+                )
+                + cadaln
+            ).chunk(3, dim=-1)
+            s_mlp, sc_mlp, g_mlp = (
+                _cond_branch_modulation(
+                    block.adaln_modulation_mlp, cemb, d_mlp, state.strength
+                )
+                + cadaln
+            ).chunk(3, dim=-1)
+        else:
+            s_sa, sc_sa, g_sa = block.adaln_modulation_self_attn(cemb).chunk(3, dim=-1)
+            s_mlp, sc_mlp, g_mlp = block.adaln_modulation_mlp(cemb).chunk(3, dim=-1)
+
+        # ---- self-attn (this is what we cache) ----
+        cond_normed = block.layer_norm_self_attn(cond_x) * (1 + sc_sa) + s_sa
+        cq, ck, cv = _cond_qkv(attn, cond_normed, state.lora_qkv[idx], eff, cond_rope)
+        cache.append((ck.detach(), cv.detach()))
+
+        # ---- evolve cond_x to feed the next block ----
+        attn_out = _self_attn_bshd(cq, ck, cv)
+        attn_out = rearrange(attn_out, "b s h d -> b s (h d)")
+        proj = attn.output_proj(attn_out)
+        if state.lora_o[idx] is not None:
+            proj = proj + eff * state.lora_o[idx](attn_out)
+        cond_x = cond_x + g_sa * proj
+
+        # ---- MLP ----
+        mlp_normed = block.layer_norm_mlp(cond_x) * (1 + sc_mlp) + s_mlp
+        hmid = block.mlp.layer1(mlp_normed)
+        if state.lora_ffn1[idx] is not None:
+            hmid = hmid + eff * state.lora_ffn1[idx](mlp_normed)
+        hmid = block.mlp.activation(hmid)
+        mlp_out = block.mlp.layer2(hmid)
+        if state.lora_ffn2[idx] is not None:
+            mlp_out = mlp_out + eff * state.lora_ffn2[idx](hmid)
+        cond_x = cond_x + g_mlp * mlp_out
+
+    state.cond_kv_cache = cache
+    state._cache_device = device
+    nbytes = sum(k.numel() + v.numel() for k, v in cache) * cache[0][0].element_size()
+    logger.info(
+        f"EasyControl: built cond KV cache ({len(cache)} blocks, "
+        f"S_c={cache[0][0].shape[1]}, {nbytes / 1e6:.0f} MB)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Extended self-attention (target keys + cached cond keys, b_cond gate)
+# ---------------------------------------------------------------------------
+
+
+def _extended_self_attn(tq, tk, tv, ck, cv, b_cond):
+    """Attention of target queries over [target_k; cond_k] with an additive
+    ``b_cond`` logit bias on the cond columns. All inputs [B, S, H, D] (cond may
+    be batch-1 and is broadcast). Returns [B, S, H, D].
+
+    Dispatches to the flash-attn LSE-decomposed path when the library is
+    available (see ``_extended_self_attn_flash``); otherwise uses a mask-free
+    SDPA formulation: the uniform ``b_cond`` bias is folded into one appended
+    head dimension (query extra = sqrt(D), target-key extra = 0, cond-key extra
+    = b_cond, explicit ``scale=1/sqrt(D)``), so the logit picks up exactly
+    ``+b_cond`` on cond columns with no ``attn_mask``. A float mask would force
+    SDPA off its flash backend onto the much slower mem-efficient kernel
+    (~2.6x at ~1MP shapes); mask-free, the padded call stays flash-eligible.
+    The head dim is zero-padded to a multiple of 8 (flash kernel alignment;
+    zero dims contribute nothing to any dot product) and the padded value
+    channels are sliced off the output."""
+    if (
+        _flash_ext_enabled()
+        and tq.is_cuda
+        and tq.dtype in (torch.float16, torch.bfloat16)
+    ):
+        try:
+            return _extended_self_attn_flash(tq, tk, tv, ck, cv, b_cond)
+        except Exception as e:  # unsupported arch/head-dim → permanent fallback
+            _flash_ext_disable(e)
+
+    B, S, _, D = tq.shape
+    if ck.shape[0] != B:
+        ck = ck.expand(B, -1, -1, -1)
+        cv = cv.expand(B, -1, -1, -1)
+    pad = 8 - D % 8 if D % 8 else 8  # >=1 bias dim, total a multiple of 8
+    q = F.pad(tq, (0, pad))
+    q[..., D] = math.sqrt(D)
+    k = F.pad(torch.cat([tk, ck], dim=1), (0, pad))
+    k[:, S:, :, D] = b_cond.to(k.dtype)
+    v = F.pad(torch.cat([tv, cv], dim=1), (0, pad))
+    out = F.scaled_dot_product_attention(
+        q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2),
+        scale=1.0 / math.sqrt(D),
+    )
+    return out.transpose(1, 2)[..., :D]  # [B,S,H,D]
+
+
+def _extended_self_attn_flash(tq, tk, tv, ck, cv, b_cond):
+    """Flash-attn equivalent of ``_extended_self_attn`` via LSE decomposition.
+
+    The joint softmax over ``[target_k ; cond_k + b_cond]`` is split into two
+    independent flash attentions — one over target keys, one over cond keys —
+    then recombined by log-sum-exp. The uniform scalar ``b_cond`` bias on the
+    cond group is exact under this split: it cancels inside the cond group's own
+    normalization (so ``out_c`` is computed bias-free) and re-enters only as a
+    constant shift ``+b_cond`` on the cond group's LSE during the combine. This
+    is the forward half of anima_lora ``_ExtendedSelfAttnLSEFunc``.
+
+    flash_attn_func consumes ``[B, S, H, D]`` directly (no transpose) and
+    returns ``softmax_lse`` as ``[B, H, S]`` in the natural-log domain with the
+    softmax_scale already applied — matching SDPA's default ``1/sqrt(D)`` scale,
+    so the two paths are numerically equivalent."""
+    B = tq.shape[0]
+    if ck.shape[0] != B:
+        # flash requires matching batch dims; expand+contiguous (B is tiny — the
+        # CFG fan, typically 1–2 — so the cond-KV duplication is cheap).
+        ck = ck.expand(B, -1, -1, -1).contiguous()
+        cv = cv.expand(B, -1, -1, -1).contiguous()
+
+    out_t, lse_t, _ = _flash_attn_func(tq, tk, tv, return_attn_probs=True)
+    out_c, lse_c, _ = _flash_attn_func(tq, ck, cv, return_attn_probs=True)
+
+    # lse_*: [B, H, S], fp32. Shift the cond group by the trained scalar gate.
+    lse_c_b = lse_c + b_cond.to(lse_c.dtype)
+    log_z = torch.logaddexp(lse_t, lse_c_b)
+    w_t = torch.exp(lse_t - log_z)  # [B, H, S]
+    w_c = torch.exp(lse_c_b - log_z)
+    # weights → [B, S, H, 1] to scale the [B, S, H, D] flash outputs.
+    w_t = w_t.transpose(1, 2).unsqueeze(-1).to(out_t.dtype)
+    w_c = w_c.transpose(1, 2).unsqueeze(-1).to(out_c.dtype)
+    return out_t * w_t + out_c * w_c  # [B, S, H, D]
+
+
+def _make_self_attn_forward(state: EasyControlState, idx: int):
+    """Replacement for one block's ``self_attn.forward`` (an ``Attention``).
+
+    Overriding only the self-attention — not the whole Block — keeps every other
+    part of ComfyUI's block native (AdaLN, cross-attn, MLP, residuals, dtype
+    handling), so there is nothing to drift and no block-level weights to strand
+    (``Attention`` holds no direct parameters; its q/k/v/o projections and norms
+    are submodules that keep their own cast-weights forward).
+
+    Resolves the live ``Attention`` from ``state.live_blocks[idx].self_attn``
+    each call, so a downstream DiT rebuild can't strand the patch on a dead
+    instance.
+
+    ``torch._dynamo.disable`` keeps this an opaque eager region so the closure
+    composes with per-block ``torch.compile`` (e.g. the Anima Block Compile
+    node). Without it, dynamo tries to trace the ``state.live_blocks[idx]``
+    deref while compiling that very block and re-enters the module tree from a
+    non-local source, tripping ``"UnspecializedNNModuleVariable(Block) is
+    already tracked for mutation"``. The same live-block indirection that makes
+    this patch survive a DiT rebuild is what dynamo can't reconcile, so we just
+    graph-break around the extended attention (the rest of the block still
+    compiles).
+    """
+
+    @torch._dynamo.disable
+    def forward(x, context=None, rope_emb=None, transformer_options={}):
+        attn = state.live_blocks[idx].self_attn
+        cache = state.cond_kv_cache
+        # Cond not ready, or this somehow ran as cross-attn → native attention.
+        if cache is None or context is not None:
+            return type(attn).forward(attn, x, context, rope_emb, transformer_options)
+
+        tq, tk, tv = attn.compute_qkv(x, None, rope_emb=rope_emb)  # [B,S,H,D]
+        ck, cv = cache[idx]
+        out = _extended_self_attn(
+            tq, tk, tv, ck.to(tk.dtype), cv.to(tv.dtype), state.b_cond[idx]
+        )
+        out = rearrange(out, "b s h d -> b s (h d)")
+        return attn.output_dropout(attn.output_proj(out))
+
+    return forward
+
+
+def _cond_cache_bytes(state: EasyControlState) -> int:
+    """Estimated VRAM of the per-block cond KV cache (2-byte sampling dtype)."""
+    if state.cond_latent is None or not state.hidden_dim:
+        return 0
+    h, w = state.cond_latent.shape[-2:]
+    tokens = math.ceil(h / 2) * math.ceil(w / 2)  # patch_spatial = 2
+    return state.num_blocks * 2 * tokens * state.hidden_dim * 2
+
+
+def _make_prepare_sampling_wrapper(state: EasyControlState):
+    """PREPARE_SAMPLING wrapper: reserve VRAM for the cond KV cache.
+
+    The cache (+ the one-off prefill walk) is allocated lazily inside the first
+    DiT forward, where comfy's memory manager can no longer make room — on
+    tight cards an image swap then OOMs mid-sampling. After comfy has sized and
+    loaded models for the run (the wrapped executor), ask ``free_memory`` to
+    hold the cache's worth of extra headroom free; it partially unloads loaded
+    models if needed, which is safe here (before any forward) and merely slower,
+    where the alternative was an OOM.
+    """
+
+    def prepare_sampling_wrapper(executor, model, noise_shape, conds, **kwargs):
+        out = executor(model, noise_shape, conds, **kwargs)
+        if state.cond_kv_cache is None:  # only when a prefill is pending
+            try:
+                from comfy import model_management
+
+                dev = model_management.get_torch_device()
+                extra = _cond_cache_bytes(state)
+                if extra and dev.type == "cuda":
+                    # Absolute free-VRAM floor: cache (+25% for the prefill
+                    # walk) + headroom for sampling activations. A no-op when
+                    # that much is already free; under real pressure it
+                    # partially unloads model weights instead of OOMing.
+                    floor = int(extra * 1.25) + (768 << 20)
+                    if model_management.get_free_memory(dev) < floor:
+                        model_management.free_memory(floor, dev)
+            except Exception:
+                logger.warning(
+                    "EasyControl: cond-cache VRAM reservation failed", exc_info=True
+                )
+        return out
+
+    return prepare_sampling_wrapper
+
+
+# ---------------------------------------------------------------------------
+# Pre-hook: lazy cond-KV prefill + live-block refresh
+# ---------------------------------------------------------------------------
+
+
+def _make_prefill_pre_hook(state: EasyControlState):
+    def pre_hook(module, args):
+        # module = live diffusion_model; args[0] = x (model-space latent).
+        state.live_blocks = module.blocks
+        x = args[0]
+        device, dtype = x.device, x.dtype
+        if state.cond_kv_cache is None or state._cache_device != device:
+            _build_cond_kv(module, state, device, dtype)
+        return None
+
+    return pre_hook
+
+
+def _install_adaln_patches(model, diffusion_model, state: EasyControlState, strength):
+    """Merge the target-stream adaln LoRA as ordinary ModelPatcher weight patches.
+
+    Each per-branch delta lands on ``adaln_modulation_{branch}.2.weight`` (the
+    256->3D up-projection — comfy's split-Sequential twin of anima_lora's
+    ``adaln_up_{branch}``; both are bias-free, and the 256-dim bottleneck value
+    is identical between the fused and split layouts, so the weight merge is
+    exact). Going through ``add_patches`` keeps this comfy-native: it composes
+    with lowvram partial loading, block compile, and other LoRAs, and reverts on
+    unpatch. Patch strength = node strength, matching training's
+    ``delta_scale = multiplier``. The cond stream must NOT see these patches —
+    ``_cond_branch_modulation`` subtracts them during prefill.
+    """
+    b0 = diffusion_model.blocks[0]
+    if not getattr(b0, "use_adaln_lora", False):
+        raise ValueError(
+            "EasyControl checkpoint carries target-stream adaln LoRA "
+            "(train_adaln) but the loaded DiT uses vanilla adaln MLPs "
+            "(use_adaln_lora=False). Wrong base model?"
+        )
+    probe = state.adaln["self_attn"][0]
+    seq = b0.adaln_modulation_self_attn
+    delta_shape = (probe.up.shape[0], probe.down.shape[1])
+    if len(seq) != 3 or tuple(seq[2].weight.shape) != delta_shape:
+        got = tuple(seq[2].weight.shape) if len(seq) == 3 else "not a bottleneck"
+        raise ValueError(
+            f"adaln shape mismatch: checkpoint delta is {delta_shape} but the "
+            f"DiT's adaln_modulation up-projection is {got}."
+        )
+
+    try:  # current comfy: loras are WeightAdapterBase instances
+        from comfy.weight_adapter import LoRAAdapter
+
+        def make_patch(m):
+            return LoRAAdapter(
+                set(), (m.up, m.down, state.adaln_alpha, None, None, None)
+            )
+    except ImportError:  # older comfy: ("lora", 6-tuple) patch format
+
+        def make_patch(m):
+            return ("lora", (m.up, m.down, state.adaln_alpha, None, None, None))
+
+    patches = {}
+    for branch in ("self_attn", "cross_attn", "mlp"):
+        for i, m in enumerate(state.adaln[branch]):
+            key = f"diffusion_model.blocks.{i}.adaln_modulation_{branch}.2.weight"
+            patches[key] = make_patch(m)
+    applied = model.add_patches(patches, strength_patch=float(strength))
+    if len(applied) != len(patches):
+        missing = sorted(set(patches) - set(applied))[:4]
+        raise ValueError(
+            f"adaln weight patches failed to attach ({len(applied)}/{len(patches)} "
+            f"applied; e.g. {missing}). ComfyUI key layout changed?"
+        )
+    logger.info(
+        f"EasyControl: merged target-stream adaln LoRA "
+        f"(r={state.adaln_rank}, alpha={state.adaln_alpha:g}, "
+        f"{len(patches)} patches, strength={float(strength):.3f})"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public entry point — called by the node
+# ---------------------------------------------------------------------------
+
+
+def install_easycontrol(model, weight_path, cond_latent, strength, cond_scale_override=None):
+    """Install EasyControl onto a cloned ModelPatcher.
+
+    ``cond_latent`` is the VAE-encoded reference in **model space** (the node
+    applies ``process_latent_in``), 4D ``[1, C, H, W]``.
+    """
+    sd, meta = _load_weights_and_meta(weight_path)
+    state = EasyControlState(sd, meta, strength, cond_scale_override)
+    state.cond_latent = cond_latent
+
+    diffusion_model = model.get_model_object("diffusion_model")
+    nblocks = len(diffusion_model.blocks)
+    if nblocks != state.num_blocks:
+        raise ValueError(
+            f"EasyControl checkpoint is for {state.num_blocks} blocks but the "
+            f"loaded DiT has {nblocks}. Wrong base model?"
+        )
+    state.hidden_dim = int(diffusion_model.blocks[0].x_dim)
+
+    if state.train_adaln:
+        _install_adaln_patches(model, diffusion_model, state, strength)
+
+    # Reserve VRAM for the lazily-built cond KV cache before sampling starts
+    # (comfy's memory manager can't see it otherwise — image-swap OOM source).
+    try:
+        from comfy.patcher_extension import WrappersMP
+
+        model.add_wrapper_with_key(
+            WrappersMP.PREPARE_SAMPLING,
+            "easycontrol_cond_cache",
+            _make_prepare_sampling_wrapper(state),
+        )
+    except Exception:
+        logger.warning(
+            "EasyControl: could not register PREPARE_SAMPLING wrapper; "
+            "cond-cache VRAM will not be pre-reserved", exc_info=True
+        )
+
+    # Lazy-prefill pre-hook on diffusion_model (object-patched OrderedDict so it
+    # reverts on unpatch and composes with other pre-hooks).
+    pre_hook = _make_prefill_pre_hook(state)
+    new_pre = OrderedDict(diffusion_model._forward_pre_hooks)
+    new_pre[id(pre_hook)] = pre_hook
+    model.add_object_patch("diffusion_model._forward_pre_hooks", new_pre)
+
+    # Per-block self-attention replacement (object-patched → path-resolved to
+    # the live blocks; reverted on unpatch). Only self_attn is swapped; the rest
+    # of each block stays native.
+    for idx in range(state.num_blocks):
+        model.add_object_patch(
+            f"diffusion_model.blocks.{idx}.self_attn.forward",
+            _make_self_attn_forward(state, idx),
+        )
+
+    # Keep the state alive for the patcher's lifetime.
+    if not hasattr(model, "_easycontrol_states"):
+        model._easycontrol_states = []
+    model._easycontrol_states.append(state)
+    logger.info(
+        f"EasyControl: installed ({state.num_blocks} blocks, r={state.r}, "
+        f"ffn_lora={state.apply_ffn}, adaln={state.train_adaln}, "
+        f"eff_scale={state.eff_scale:.3f})"
+    )
+    return state
+
+"""EasyControl image-conditioning node for the Anima DiT — KSampler-compatible.
+
+A single model-patch node: ``MODEL + VAE + IMAGE -> MODEL``. The returned MODEL
+carries the reference-image conditioning as a set of object patches, so it flows
+straight into the stock KSampler (and composes with ControlNet, schedulers,
+other adapters) — no dedicated sampler node, unlike the upstream Flux/Qwen
+EasyControl ComfyUI nodes.
+
+The EasyControl ``.safetensors`` goes in ``ComfyUI/models/loras/`` (same folder
+the LoRA loaders read). Feed the conditioning image (e.g. the grayscale / manga
+line page for colorization) into the IMAGE socket and a VAE that matches the
+Anima latent space into the VAE socket.
+"""
+
+
+
+
+
+
+def _vae_spatial(vae):
+    """Spatial downscale (h_mult, w_mult) of a ComfyUI VAE.
+
+    ``downscale_ratio`` is either an int (square) or a ``(callable, h, w)`` tuple
+    for the temporally-aware video VAEs. We only need the spatial multiples.
+    """
+    dr = getattr(vae, "downscale_ratio", 8)
+    if isinstance(dr, (tuple, list)):
+        return int(dr[1]), int(dr[2])
+    return int(dr), int(dr)
+
+
+def _resize_to_megapixels(image, vae, target_mp):
+    """Resize an IMAGE ``[B,H,W,C]`` (in [0,1]) to at most ``target_mp``
+    megapixels, aspect-preserving, snapping each side to ``vae_spatial *
+    patch(2)`` so the resulting latent has even dims (cosmos ``patch_spatial=2``).
+
+    ``target_mp`` is a MAX cap: a source already below it is left at its native
+    resolution (only snapped) rather than upscaled.
+
+    ``target_mp <= 0`` means keep the native resolution (still snapped, so the
+    VAE/patch grid is clean). Returns the resized image ``[B,H,W,C]``.
+    """
+    _, h, w, _ = image.shape
+    sh, sw = _vae_spatial(vae)
+    mult_h, mult_w = sh * 2, sw * 2
+
+    if target_mp and target_mp > 0:
+        # target_mp is a MAX cap: only downscale when the source exceeds it,
+        # never upscale a smaller source (clamp scale to <= 1.0).
+        scale = min(1.0, (target_mp * 1_000_000 / float(h * w)) ** 0.5)
+        new_h, new_w = h * scale, w * scale
+    else:
+        new_h, new_w = float(h), float(w)
+
+    snap_h = max(mult_h, int(round(new_h / mult_h)) * mult_h)
+    snap_w = max(mult_w, int(round(new_w / mult_w)) * mult_w)
+    if (snap_h, snap_w) == (h, w):
+        return image
+
+    # IMAGE [B,H,W,C] → [B,C,H,W] for interpolate → back.
+    # antialias=True is essential: the reference is almost always *downscaled*
+    # (target_mp caps at ~1MP, sources are larger), and plain bilinear without
+    # anti-aliasing both softens the cond and aliases high-frequency detail
+    # (manga lines, fine texture), which locally shifts averaged colors — the
+    # cond then looks blurred / colour-off. bicubic+antialias matches the LANCZOS
+    # resampling the repo's own inference path uses (library/inference/
+    # generation.py), so the node's cond latent tracks the trained distribution.
+    chw = image.permute(0, 3, 1, 2)
+    chw = F.interpolate(
+        chw, size=(snap_h, snap_w), mode="bicubic", antialias=True
+    ).clamp_(0.0, 1.0)
+    return chw.permute(0, 2, 3, 1).contiguous()
+
+
+# Mid-gray fill for the inpaint hole, matching the training-time convention
+# (easycontrol_adapters/inpainting/mask_image.py ``GRAY = 128`` in [0,255]). The
+# VAE input transform is ``x*2 - 1`` on a [0,1] image, so 128/255 ≈ 0.502 → ~0 in
+# [-1,1] — a flat latent region the cond LoRA + b_cond gate learn as "regenerate
+# here." Must match training or the hole reads off-distribution.
+_INPAINT_GRAY = 128.0 / 255.0
+
+
+def _apply_inpaint_mask(pixels, mask):
+    """Gray-fill the masked region of ``pixels`` ([1,H,W,C], [0,1]) → inpaint cond.
+
+    ``mask`` is a ComfyUI MASK ([B,H,W], [0,1]); the *selected* region (value 1)
+    is the hole to regenerate. The mask is resized (nearest, to preserve the hard
+    hole edge the synthetic LaMa masks have) to the image grid and thresholded at
+    0.5, then those pixels are set to mid-gray — reproducing what the inpaint
+    training saw (cond = original image with a free-form gray hole).
+    """
+    _, h, w, _ = pixels.shape
+    m = mask[:1].to(pixels.device, pixels.dtype)  # [1,Hm,Wm]
+    if m.shape[-2:] != (h, w):
+        m = F.interpolate(m.unsqueeze(1), size=(h, w), mode="nearest").squeeze(1)
+    hole = (m > 0.5).unsqueeze(-1)  # [1,H,W,1]
+    return torch.where(hole, pixels.new_full((), _INPAINT_GRAY), pixels)
+
+
+class FG_AnimaEasyControlPatch:
+    """Apply Anima EasyControl reference-image conditioning to a MODEL.
+
+    EasyControl is a frozen-DiT adapter: a per-block cond LoRA on self-attn
+    (q/k/v/o) + FFN plus a scalar ``b_cond`` logit-bias gate. At inference the
+    reference image is VAE-encoded, the cond stream is walked once to build a
+    per-block key/value cache, and each block's self-attention is extended to
+    attend over those cached cond keys. Output is a MODEL for the stock KSampler.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        loras = folder_paths.get_filename_list("loras")
+        return {
+            "required": {
+                "model": ("MODEL",),
+                "vae": ("VAE",),
+                "image": ("IMAGE",),
+                "base_model": (
+                    ["anima"],
+                    {
+                        "default": "anima",
+                        "tooltip": (
+                            "Base model family this node supports. Currently "
+                            "Anima only — the EasyControl reimplementation targets "
+                            "the Anima/Cosmos DiT backbone. More families may be "
+                            "added later."
+                        ),
+                    },
+                ),
+                "easycontrol_lora": (
+                    loras,
+                    {
+                        "tooltip": (
+                            "EasyControl checkpoint (networks.methods.easycontrol "
+                            "— per-block cond LoRA + b_cond gate). Lives in "
+                            "ComfyUI/models/loras/."
+                        )
+                    },
+                ),
+                "strength": (
+                    "FLOAT",
+                    {
+                        "default": 1.0,
+                        "min": 0.0,
+                        "max": 3.0,
+                        "step": 0.05,
+                        "tooltip": (
+                            "Conditioning strength. Scales the cond-LoRA deltas "
+                            "(multiplies the trained cond_scale). 1.0 = as trained; "
+                            "raise to push harder toward the reference, lower to "
+                            "loosen."
+                        ),
+                    },
+                ),
+            },
+            "optional": {
+                "mask": (
+                    "MASK",
+                    {
+                        "tooltip": (
+                            "Optional inpaint mask. White (selected) region is the "
+                            "hole to regenerate: the node fills it with mid-gray and "
+                            "encodes that as the conditioning image, matching the "
+                            "`inpaint` adapter's training (cond = original image with "
+                            "a gray hole). Wire the ORIGINAL image into the IMAGE "
+                            "socket and the mask here. Leave unconnected for adapters "
+                            "that take a pre-built cond image (e.g. colorize)."
+                        )
+                    },
+                ),
+                "target_megapixels": (
+                    "FLOAT",
+                    {
+                        "default": 1.0,
+                        "min": 0.0,
+                        "max": 4.0,
+                        "step": 0.1,
+                        "tooltip": (
+                            "Output size, in megapixels, for the returned LATENT "
+                            "(and the conditioning encode). The image is resized "
+                            "aspect-preserving to ~this many MP and snapped to the "
+                            "VAE/patch grid; the cond stream is encoded at the same "
+                            "resolution so it shares the target's grid (best spatial "
+                            "alignment for colorize). 1.0 keeps generation on the "
+                            "~1MP distribution Anima was trained at. 0 = keep the "
+                            "input's native resolution."
+                        ),
+                    },
+                ),
+                "cond_scale_override": (
+                    "FLOAT",
+                    {
+                        "default": 0.0,
+                        "min": 0.0,
+                        "max": 4.0,
+                        "step": 0.05,
+                        "tooltip": (
+                            "If > 0, replaces the checkpoint's trained cond_scale "
+                            "(before strength). 0 = use the trained value."
+                        ),
+                    },
+                ),
+            },
+        }
+
+    RETURN_TYPES = ("MODEL", "LATENT")
+    RETURN_NAMES = ("model", "latent")
+    FUNCTION = "apply"
+    CATEGORY = "loaders"
+    DESCRIPTION = (
+        "Anima EasyControl image conditioning, KSampler-compatible. Feeds a "
+        "reference image (VAE-encoded) into a frozen-DiT extended self-attention "
+        "stream and returns a patched MODEL plus an empty LATENT sized to the "
+        "conditioning resolution — wire the latent straight into the KSampler so "
+        "it generates at the (aspect-matched, ~1MP) cond grid. Ideal for spatially"
+        " aligned tasks like colorization."
+    )
+
+    def apply(self, model, vae, image, base_model, easycontrol_lora, strength,
+              mask=None, target_megapixels=1.0, cond_scale_override=0.0):
+        # base_model is an informational guard — only "anima" is offered today.
+        del base_model
+        new_model = model.clone()
+        weight_path = folder_paths.get_full_path("loras", easycontrol_lora)
+        if weight_path is None:
+            raise FileNotFoundError(
+                f"EasyControl checkpoint not found in loras folder: {easycontrol_lora}"
+            )
+
+        # IMAGE is [B, H, W, C] in [0, 1]; use the first image as the reference.
+        # Resize to ~target_megapixels (aspect-preserving, VAE/patch-snapped) so
+        # the cond encode and the returned target latent share one grid.
+        pixels = image[:1, :, :, :3]
+        pixels = _resize_to_megapixels(pixels, vae, float(target_megapixels))
+        # Inpaint: gray-fill the masked hole AFTER resizing, so the gray region
+        # lands on the cond's own (snapped) grid — matching the training cond.
+        if mask is not None:
+            pixels = _apply_inpaint_mask(pixels, mask)
+        vae_latent = vae.encode(pixels)  # ComfyUI latent space [1, C, h, w]
+
+        # Map into the DiT's input space — the same transform apply_model applies
+        # to the noisy latent before calling diffusion_model. Without this the
+        # cond stream sees a differently-scaled latent than the target stream.
+        cond_latent = new_model.model.process_latent_in(vae_latent)
+
+        override = float(cond_scale_override) if cond_scale_override and cond_scale_override > 0 else None
+        install_easycontrol(
+            new_model, weight_path, cond_latent, float(strength),
+            cond_scale_override=override,
+        )
+
+        # Empty target latent matching the cond grid. KSampler overwrites the
+        # contents with noise (full denoise); only the shape matters here.
+        out_latent = {"samples": torch.zeros_like(vae_latent)}
+        return (new_model, out_latent)
+
+

@@ -7,6 +7,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import gc
+import cv2
 import math
 import json
 import torch
@@ -335,6 +336,97 @@ def fit_resize_image(image:Image, target_width:int, target_height:int, fit:str, 
             ret_image = image.resize((target_width, target_height), resize_sampler)
     return  ret_image
 
+
+def normalize_region(limit, startp, size):
+    if startp < 0:
+        new_endp = min(limit, size)
+        new_startp = 0
+    elif startp + size > limit:
+        new_startp = max(0, limit - size)
+        new_endp = limit
+    else:
+        new_startp = startp
+        new_endp = min(limit, startp+size)
+
+    return int(new_startp), int(new_endp)
+
+
+def make_crop_region(w, h, bbox, crop_factor, crop_min_size=None):
+    x1 = bbox[0]
+    y1 = bbox[1]
+    x2 = bbox[2]
+    y2 = bbox[3]
+
+    bbox_w = x2 - x1
+    bbox_h = y2 - y1
+
+    crop_w = bbox_w * crop_factor
+    crop_h = bbox_h * crop_factor
+
+    if crop_min_size is not None:
+        crop_w = max(crop_min_size, crop_w)
+        crop_h = max(crop_min_size, crop_h)
+
+    kernel_x = x1 + bbox_w / 2
+    kernel_y = y1 + bbox_h / 2
+
+    new_x1 = int(kernel_x - crop_w / 2)
+    new_y1 = int(kernel_y - crop_h / 2)
+
+    # make sure position in (w,h)
+    new_x1, new_x2 = normalize_region(w, new_x1, crop_w)
+    new_y1, new_y2 = normalize_region(h, new_y1, crop_h)
+
+    return [new_x1, new_y1, new_x2, new_y2]
+
+
+def make_2d_mask(mask):
+    if len(mask.shape) == 4:
+        return mask.squeeze(0).squeeze(0)
+
+    elif len(mask.shape) == 3:
+        return mask.squeeze(0)
+
+    return mask
+
+
+def dilate_mask(mask, dilation_factor, iter=1, use_gpu:bool = False):
+    if dilation_factor == 0:
+        return make_2d_mask(mask)
+
+    mask = make_2d_mask(mask)
+    kernel = np.ones((abs(dilation_factor), abs(dilation_factor)), np.uint8)
+
+    if use_gpu:
+        mask = cv2.UMat(mask)
+        kernel = cv2.UMat(kernel)
+
+    if dilation_factor > 0:
+        result = cv2.dilate(mask, kernel, iter)
+    else:
+        result = cv2.erode(mask, kernel, iter)
+
+    if use_gpu:
+        return result.get()
+    else:
+        return result
+
+
+def segs_to_combined_mask(segs):
+    shape = segs[0]
+    h = shape[0]
+    w = shape[1]
+
+    mask = np.zeros((h, w), dtype=np.uint8)
+
+    for seg in segs[1]:
+        cropped_mask = seg.cropped_mask
+        crop_region = seg.crop_region
+        mask[crop_region[1]:crop_region[3], crop_region[0]:crop_region[2]] |= (cropped_mask * 255).astype(np.uint8)
+
+    return torch.from_numpy(mask.astype(np.float32) / 255.0)
+
+
 def generate_text_image(width:int, height:int, text:str, font_file:str, text_scale:float=1, font_color:str="#FFFFFF",) -> Image:
     image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
@@ -465,7 +557,6 @@ def bounded_shape(shape, tile_x, tile_y, tile_t):
 
 def auto_tile(vae, shape, estimator, unit_divisor, tile_t=None):
     """Return a tile size in PIXELS, or 0 for 'do not tile'.
-
     shape is in the estimator's own units (latent for decode, pixel for
     encode). unit_divisor converts pixels into those units.
     """
@@ -505,7 +596,6 @@ def resolve(value, auto_value):
 def encode_auto(vae, pixels, tile_size=AUTO, overlap=AUTO,
                 temporal_size=AUTO, temporal_overlap=AUTO):
     """Encode pixels (B, H, W, C) to a latent, tiling only if it won't fit.
-
     Returns (latent_tensor, tile_px) where tile_px is 0 when no tiling was
     used -- handy for logging what actually happened.
     """
@@ -528,7 +618,6 @@ def encode_auto(vae, pixels, tile_size=AUTO, overlap=AUTO,
 def decode_auto(vae, latent, tile_size=AUTO, overlap=AUTO,
                 temporal_size=AUTO, temporal_overlap=AUTO):
     """Decode a latent to pixels, tiling only if it won't fit.
-
     Returns (image_tensor, tile_px), tile_px 0 when untiled.
     """
     compression = vae.spacial_compression_decode() or 8
@@ -559,5 +648,40 @@ def decode_auto(vae, latent, tile_size=AUTO, overlap=AUTO,
     else:
         tt = to = None
 
-    return vae.decode_tiled(latent, tile_x=tile_lat, tile_y=tile_lat,
-                            overlap=ov_lat, tile_t=tt, overlap_t=to), size
+    return vae.decode_tiled(
+        latent,
+        tile_x    = tile_lat,
+        tile_y    = tile_lat,
+        overlap   = ov_lat,
+        tile_t    = tt,
+        overlap_t = to
+    ), size
+
+
+
+def get_dict_value(data: dict, dict_key: str, default=None):
+    """Gets a deeply nested value given a dot-delimited key."""
+    keys = dict_key.split('.')
+    key = keys.pop(0) if len(keys) > 0 else None
+    found = data[key] if key in data else None
+    if found is not None and len(keys) > 0:
+        return get_dict_value(found, '.'.join(keys), default)
+    return found if found is not None else default
+
+def get_worflow_node(extra_pnginfo, node_id: str, default=None):
+    # First, break out of any subgraphs
+    node_ids = str(node_id).split(':')
+    workflow_nodes = get_dict_value(extra_pnginfo, 'workflow.nodes', default=[])
+    workflow_subgraphs = get_dict_value(extra_pnginfo, 'workflow.definitions.subgraphs', default=[])
+    nodes_list = workflow_nodes
+    found = None
+    for individual_node_id in node_ids:
+        found = next((n for n in nodes_list if str(n['id']) == individual_node_id), None)
+        if isinstance(found, dict) and 'type' in found:
+        # Are we a subgraph? Right now, subgraph types are a UUID that exists as an id in the
+        # aubgraphs list. But, rather than check if we're a UUID, let's just check if it exists
+        # anyway, that when if (when) Comfy changes the id structure we'll keep working.
+            subgraph = next((n for n in workflow_subgraphs if str(n['id']) == found['type']), None)
+            if isinstance(subgraph, dict) and 'nodes' in subgraph:
+                nodes_list = subgraph['nodes']
+    return found if found is not None else default

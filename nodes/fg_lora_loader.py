@@ -27,7 +27,7 @@ class FG_LoraLoader:
     
     def __init__(self):
         self.loaded_loras = {}
-        self.NODE_NAME = "Multi-LoRA Loader"
+        self.NODE_NAME = "FG_DynamicLoraLoader"
     
     @classmethod
     def INPUT_TYPES(cls):
