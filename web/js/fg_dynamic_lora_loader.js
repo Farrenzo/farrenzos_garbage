@@ -126,6 +126,15 @@ function createShiftedDraw(widgetType) {
  * Filter mouse events so clicks inside the image column don't
  * accidentally trigger widget interactions underneath.
  */
+// Only lora_stack is saved/sent. The frontend restores saved widgets_values
+// positionally into every addWidget() call made during configure, so the
+// per-entry widgets must stay out of widgets_values.
+function noSerialize(widget) {
+    widget.serialize = false;
+    widget.options.serialize = false;
+    return widget;
+}
+
 function addMouseGuard(widget) {
     widget.mouse = function (event, pos, node) {
         if (pos[0] < getImgColWidth(node)) return true; // consume event
@@ -163,20 +172,17 @@ app.registerExtension({
             this.serialize_widgets = true;
             this._previewImages = {};
 
-            this.addLoraButton = this.addWidget("button", "➕ Add LoRA", null, () => {
+            this.addLoraButton = noSerialize(this.addWidget("button", "➕ Add LoRA", null, () => {
                 this.addLoraEntry();
-            });
+            }));
             // Hide from widget rendering — we draw it pinned to the
             // node floor in onDrawForeground instead.
             this.addLoraButton.computeSize = () => [0, 34];
             this.addLoraButton.draw = function () {};
 
             this.stackWidget = this.widgets.find((w) => w.name === "lora_stack");
-            if (!this.stackWidget) {
-                this.stackWidget = this.addWidget("text", "lora_stack", "[]", () => {});
-                this.stackWidget.type = "converted-widget";
-            }
-            const stackSpacer = this.addWidget("button", "", null, () => {});
+            this.stackWidget.hidden = true;
+            const stackSpacer = noSerialize(this.addWidget("button", "", null, () => {}));
             stackSpacer.computeSize = () => [0, 10];
             stackSpacer.draw = function () {};
             this.updateStack();
@@ -241,7 +247,7 @@ app.registerExtension({
             const entry = { index, _triggerWords: "" };
 
             // ── spacer between entries ──
-            entry.spacerWidget = this.addWidget("button", "", null, () => {});
+            entry.spacerWidget = noSerialize(this.addWidget("button", "", null, () => {}));
             entry.spacerWidget.computeSize = () => [0, index === 0 ? 0 : 12];
             entry.spacerWidget.draw = function (ctx, node, w, y, H) {
                 this.last_y = y;
@@ -265,6 +271,7 @@ app.registerExtension({
                 },
                 { values: loraList }
             );
+            noSerialize(entry.loraWidget);
             entry.loraWidget.draw = createShiftedDraw("combo");
             addMouseGuard(entry.loraWidget);
 
@@ -281,6 +288,7 @@ app.registerExtension({
                     }, 1000);
                 });
             });
+            noSerialize(entry.copyWidget);
             entry.copyWidget.draw = createShiftedDraw("button");
             addMouseGuard(entry.copyWidget);
 
@@ -292,6 +300,7 @@ app.registerExtension({
                 () => this.updateStack(),
                 { min: -100, max: 100, step: 0.1 }
             );
+            noSerialize(entry.modelStrWidget);
             entry.modelStrWidget.draw = createShiftedDraw("number");
             addMouseGuard(entry.modelStrWidget);
 
@@ -303,6 +312,7 @@ app.registerExtension({
                 () => this.updateStack(),
                 { min: -100, max: 100, step: 0.1 }
             );
+            noSerialize(entry.clipStrWidget);
             entry.clipStrWidget.draw = createShiftedDraw("number");
             addMouseGuard(entry.clipStrWidget);
 
@@ -310,8 +320,14 @@ app.registerExtension({
             entry.removeWidget = this.addWidget("button", "➖ Remove", null, () => {
                 this.removeLoraEntry(entry);
             });
+            noSerialize(entry.removeWidget);
             entry.removeWidget.draw = createShiftedDraw("button");
             addMouseGuard(entry.removeWidget);
+
+            // addWidget() may have overwritten these with restored values
+            entry.loraWidget.value     = config?.name || loraList[0] || "None";
+            entry.modelStrWidget.value = config?.strength_model ?? 1.0;
+            entry.clipStrWidget.value  = config?.strength_clip ?? 1.0;
 
             // ── bookkeeping ──
             this.loraEntries.push(entry);
@@ -493,17 +509,16 @@ app.registerExtension({
         const onConfigure = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function (info) {
             onConfigure?.apply(this, arguments);
+            // The frontend has already restored lora_stack; older saves may
+            // hold it at a different widgets_values slot.
+            const stackVal = [this.stackWidget.value, ...(info.widgets_values ?? [])].find(
+                (v) => typeof v === "string" && v.startsWith("[")
+            );
             this.clearAllEntries();
-
-            if (info.widgets_values) {
-                const stackVal = info.widgets_values.find(
-                    (v) => typeof v === "string" && v.startsWith("[")
-                );
-                if (stackVal) {
-                    try {
-                        JSON.parse(stackVal).forEach((cfg) => this.addLoraEntry(cfg));
-                    } catch (e) {}
-                }
+            if (stackVal) {
+                try {
+                    JSON.parse(stackVal).forEach((cfg) => this.addLoraEntry(cfg));
+                } catch (e) {}
             }
         };
     },

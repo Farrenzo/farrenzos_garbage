@@ -1,0 +1,217 @@
+"""
+fg_yue2_xpu - XPU graph capture for ComfyUI's YuE2 ABC/music decode loop.
+
+Drop this folder into ComfyUI/custom_nodes/. It adds no nodes; it patches at import.
+
+Why: on XPU the stock loop runs ~700+ tiny kernel launches per token at ~48 us each,
+so the card idles most of the time. ComfyUI already has a graphable decode path
+(FixedKV cache + device-side sampling), but it is gated on CUDA in two places:
+  1. FixedKV is only used if comfy_kitchen.flash_attention_decode exists for the device
+     (CUDA/HIP only) -> here we supply an SDPA version for XPU.
+  2. Graph capture lives in comfy.model_prefetch and is hard-wired to torch.cuda
+     -> here the whole decode step (sample + 28 layers + lm_head) is captured once
+        as a torch.xpu.XPUGraph and replayed for every remaining token.
+
+FG_YUE2_GRAPH=0        stock ComfyUI loop (no patch at all)
+FG_YUE2_GRAPH=nograph  patched loop (XPU attention + new sampler) but never captures a graph
+FG_YUE2_GRAPH=1        default: patched loop + graph capture
+
+Note: sampling uses inverse-CDF with pre-drawn uniforms instead of torch.multinomial
+(RNG inside a graph is fragile), so a given seed will not reproduce the stock output.
+"""
+
+import logging
+import os
+import threading
+
+import torch
+import torch.nn.functional as F
+
+import comfy.model_management
+import comfy.model_prefetch
+import comfy.utils
+import comfy_kitchen
+import comfy.text_encoders.yue2 as yue2
+from comfy.text_encoders.llama import FixedKV, rope_matrix
+
+NODE_CLASS_MAPPINGS = {}
+NODE_DISPLAY_NAME_MAPPINGS = {}
+
+log = logging.getLogger("FG_YuE2_XPU")
+_STATE = threading.local()  # .on = True only while YuE2 builds its KV cache
+
+
+def _is_xpu(device):
+    return torch.device(device).type == "xpu"
+
+
+# --- 1. Fixed-capacity decode attention for XPU -------------------------------------
+
+_orig_available = getattr(comfy_kitchen, "flash_attention_decode_is_available", None)
+_orig_decode = getattr(comfy_kitchen, "flash_attention_decode", None)
+
+
+def _available(device):
+    # Scoped to YuE2 so other models (ACE-Step, Qwen3.5, ...) keep their stock XPU path.
+    if _is_xpu(device):
+        return bool(getattr(_STATE, "on", False))
+    return bool(_orig_available is not None and _orig_available(device))
+
+
+def _decode(q, k, v, kv_lengths):
+    """q: [B,1,H,D]  k,v: [B,capacity,KVH,D]  kv_lengths: [B] valid slots incl. current."""
+    if q.device.type != "xpu":
+        return _orig_decode(q, k, v, kv_lengths)
+    batch, _, heads, _ = q.shape
+    capacity, kv_heads = k.shape[1], k.shape[2]
+    # Fixed shapes + device-side length mask = graph-safe (no host sync, no reallocation).
+    valid = torch.arange(capacity, device=q.device).view(1, capacity) < kv_lengths.view(batch, 1)
+    out = F.scaled_dot_product_attention(
+        q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2),
+        attn_mask=valid.view(batch, 1, 1, capacity),
+        enable_gqa=heads != kv_heads,
+    )
+    return out.transpose(1, 2).contiguous()
+
+
+comfy_kitchen.flash_attention_decode_is_available = _available
+comfy_kitchen.flash_attention_decode = _decode
+
+
+# --- 2. Graph-captured generate loop ------------------------------------------------
+
+_orig_generate = yue2.YuE2TEModel._generate
+
+
+def _capture(step_fn, stream):
+    graph = torch.xpu.XPUGraph()
+    torch.xpu.synchronize()
+    try:
+        with torch.xpu.stream(stream):
+            graph.capture_begin()
+            try:
+                step_fn()
+            finally:
+                graph.capture_end()
+        return graph
+    except Exception as exc:  # anything host-side inside the step breaks capture
+        log.warning("XPU graph capture failed, continuing eager: %s", exc)
+        torch.xpu.synchronize()
+        return None
+
+
+def _generate(self, prefix, seed, max_tokens, phase, dtype, negative=None, cfg_scale=1.0,
+              legacy_off=False, **sampling):
+    stock_args = (self, prefix, seed, max_tokens, phase, dtype, negative, cfg_scale, legacy_off)
+    if (not _is_xpu(self.execution_device) or os.environ.get("FG_YUE2_GRAPH", "1") == "0"
+            or not hasattr(torch.xpu, "XPUGraph")):
+        return _orig_generate(*stock_args, **sampling)
+
+    if max(len(prefix), len(negative or [])) + max_tokens > self.config.max_position_embeddings:
+        raise ValueError("YuE2 prompt plus generation budget exceeds the model context; "
+                         "reduce the token budget or prompt length.")
+
+    device = self.execution_device
+    prefixes = [prefix] if cfg_scale == 1.0 else [prefix, negative]
+    prefix_length = max(map(len, prefixes))
+
+    # Per-layer prefetch queues do stream syncs every call: illegal during capture and
+    # pure overhead when the model is fully resident anyway.
+    old_prefetch = self.model.prefetch_dynamic_vbars
+    self.model.prefetch_dynamic_vbars = False
+    _STATE.on = True
+    try:
+        logits, cache, _ = self._prefill(prefixes, prefix_length + max_tokens, dtype)
+    finally:
+        _STATE.on = False
+
+    if not isinstance(cache[0], FixedKV):
+        log.warning("FixedKV cache not active (fixed_kv disabled?); using stock loop.")
+        self.model.prefetch_dynamic_vbars = old_prefetch
+        del logits, cache
+        return _orig_generate(*stock_args, **sampling)
+
+    sampling = dict(sampling)
+    penalty_window = sampling.pop("penalty_window")
+    min_tokens = sampling["min_tokens"]
+    end = yue2.ABC_END if phase == "abc" else yue2.MUSIC_END
+    batch = len(prefixes)
+
+    positions = torch.tensor([[len(p)] for p in prefixes], device=device, dtype=torch.long)
+    decode_buffers = (torch.empty((batch, 1, self.config.hidden_size), device=device, dtype=dtype),
+                      rope_matrix(self.model.compute_freqs_cis(positions, device)))
+    recent = torch.full((1, penalty_window), yue2.EOD, device=device, dtype=torch.long)
+    tokens = torch.empty((max_tokens,), device=device, dtype=torch.long)
+    step_index = torch.zeros((), device=device, dtype=torch.long)
+    generator = torch.Generator(device=device).manual_seed(seed)
+    uniforms = torch.rand((max_tokens,), device=device, generator=generator, dtype=torch.float32)
+    host = {"step": 0}
+
+    neg_inf = torch.tensor(float("-inf"), device=device, dtype=logits.dtype)
+
+    def head():
+        guided = logits.clone() if cfg_scale == 1.0 else logits[1:] + cfg_scale * (logits[:1] - logits[1:])
+        # Stock code blocks the end token with a Python `if step < min_tokens`, which would get
+        # frozen into the graph. Do it on the device instead so capture can start right away.
+        blocked = step_index < min_tokens
+        guided[..., end] = torch.where(blocked, neg_inf, guided[..., end])
+        # step=min_tokens makes distribution() skip its own host-side check.
+        scores = yue2.distribution(guided, recent, min_tokens, phase, legacy_off=legacy_off, **sampling)
+        if sampling["temperature"] == 0:
+            next_id = scores.argmax(-1, keepdim=True)
+        else:
+            cdf = scores.float().softmax(-1).cumsum(-1)
+            u = uniforms.index_select(0, step_index.view(1)).view(1, 1) * cdf[..., -1:]
+            next_id = torch.searchsorted(cdf, u).clamp_max_(cdf.shape[-1] - 1)
+        tokens.index_copy_(0, step_index.view(1), next_id.view(1))
+        recent.scatter_(1, (step_index % penalty_window).view(1, 1), next_id)
+        step_index.add_(1)
+        decode_buffers[0].copy_(self.model.embed_tokens(next_id.expand(batch, 1), out_dtype=dtype))
+
+    def step_fn():
+        head()
+        out = self.model(None, embeds=decode_buffers[0], past_key_values=cache, dtype=dtype,
+                         position_ids=positions, attention_mask=None, decode_buffers=decode_buffers)
+        logits.copy_(self.model.lm_head(out[0][:, -1]))
+        positions.add_(1)
+
+    progress = comfy.utils.ProgressBar(max_tokens)
+    stream = torch.xpu.Stream(device=device)
+    stream.wait_stream(torch.xpu.current_stream(device))
+    graph, capture_tried = None, False
+    capture_at = 4  # a few eager warm-up steps, then graph everything
+    if os.environ.get("FG_YUE2_GRAPH", "1") == "nograph":
+        capture_tried = True
+        log.info("YuE2 %s: FG_YUE2_GRAPH=nograph, running patched loop eagerly", phase)
+    history = []
+    try:
+        with torch.xpu.stream(stream):
+            for step in comfy.utils.model_trange(max_tokens, desc="YuE2 ABC sampling" if phase == "abc" else "YuE2 music sampling", unit="token"):
+                comfy.model_management.throw_exception_if_processing_interrupted()
+                host["step"] = step
+                if graph is None and not capture_tried and step >= capture_at:
+                    capture_tried = True
+                    graph = _capture(step_fn, stream)
+                    if graph is not None:
+                        log.info("YuE2 %s: XPU graph captured at step %d", phase, step)
+                if graph is not None:
+                    graph.replay()
+                else:
+                    step_fn()
+                progress.update_absolute(step + 1)
+                if (step + 1) % 16 == 0 or step + 1 == max_tokens:
+                    for token in tokens[len(history):step + 1].tolist():
+                        if token == end:
+                            return history, False
+                        history.append(token)
+    finally:
+        torch.xpu.current_stream(device).wait_stream(stream)
+        self.model.prefetch_dynamic_vbars = old_prefetch
+        comfy.model_prefetch.cleanup_prefetch_queues()
+        del graph
+    logging.warning("YuE2 %s reached its token budget before the end token.", phase)
+    return history, True
+
+
+yue2.YuE2TEModel._generate = _generate
+log.info("FG YuE2 XPU graph patch loaded (FG_YUE2_GRAPH=0 to disable)")

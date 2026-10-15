@@ -472,7 +472,7 @@ def get_output_path(node_name: str, filename_prefix: str, output_path: str) -> t
     if "%HMSf%" in filename_prefix:
         filename_prefix = filename_prefix.replace(
             "%HMSf%",
-            f"{datetime.datetime.now():%m%d%H%M%S%f}"
+            f"{datetime.datetime.now():%m%d%H%M%S}"
         )
 
     # Split into subfolder and filename

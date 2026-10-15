@@ -11,9 +11,8 @@ from .fg_image_scale          import FG_ImageScaler, FG_CropFactorPadding
 from .fg_lab_color_transfer   import FG_LABColorTransfer
 from .fg_load_vae             import FG_LatentTransfer
 from .fg_load_image           import FG_LoadImage
-from .fg_linework_composite   import FG_LineworkComposite, FG_BubbleTint, FG_ColorPicker, FG_ColorMap
 from .fg_lora_loader          import FG_LoraLoader
-from .fg_min_max              import FG_MinimumMaximum
+from .fg_math_utils           import FG_MinimumMaximum, FG_IntFloatOut
 from .fg_model_reference      import FG_ModelReferenceLatentMethod
 from .fg_resource_manager     import FG_ResourceManager
 from .fg_purge_memory         import FG_PurgeMemory
@@ -30,6 +29,12 @@ from .fg_conditioning_cache   import FG_SaveConditioningLatent, FG_LoadCondition
 from .fg_step_inspect         import FG_StepInspect
 from .fg_noisy_seeder         import FG_NoisySeeder
 from .fg_seed_variance_enhancer import FG_SeedVarianceEnhancer
+from .fg_linework_composite import (
+    FG_ColorMap,
+    FG_BubbleTint,
+    FG_ColorPicker,
+    FG_LineworkComposite
+)
 
 from .fg_anima.anima_lllite_inspect     import FG_LLLiteCondPreview
 from .fg_anima.anima_controlnet_nodes   import FG_AnimaLLLiteApply
@@ -68,6 +73,7 @@ MiniMaxH3AutoChain,
 MiniMaxH3AutoChainFrameReference,
 )
 from .fg_minimax.fg_minimax_h3 import FG_MiniMaxH3_Conditioner
+from .fg_yue2.fg_yue2_node import FG_YuE2XPUAccel, FG_MiniMaxMusicXPUAccel
 
 from .fg_inpaint_canvas import (
     NODE_CLASS_MAPPINGS as _INPAINT_CANVAS_NODES,
@@ -86,6 +92,7 @@ NODE_CLASS_MAPPINGS = {
     "FG_DynamicLoraLoader"           : FG_LoraLoader,
     "FG_EmptyLatent"                 : FG_EmptyLatent,
     "FG_ImageScaler"                 : FG_ImageScaler,
+    "FG_IntFloatOut"                 : FG_IntFloatOut,
     "FG_LABColorTransfer"            : FG_LABColorTransfer,
     "FG_LatentTransfer"              : FG_LatentTransfer,
     "FG_LineworkComposite"           : FG_LineworkComposite,
@@ -105,6 +112,8 @@ NODE_CLASS_MAPPINGS = {
     "FG_UnifiedModelsLoader"         : FG_UnifiedModelsLoader,
     "FG_WD14Tagger"                  : FG_WD14Tagger,
     "FG_XPUGuard"                    : FG_XPUGuard,
+    "FG_YuE2XPUAccel"                : FG_YuE2XPUAccel,
+    "FG_MiniMaxMusicXPUAccel"        : FG_MiniMaxMusicXPUAccel,
 
     # Experimental Anima nodes
     "FG_AnimaLLLiteApply"                : FG_AnimaLLLiteApply,
@@ -162,6 +171,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FG_DynamicLoraLoader"           : "🗑️ Multi-LoRA Loader",
     "FG_EmptyLatent"                 : "🗑️ Advanced Empty Latent",
     "FG_ImageScaler"                 : "🗑️ Image Scaler",
+    "FG_IntFloatOut"                 : "🗑️ Int / Float Out",
     "FG_CropFactorPadding"           : "🗑️ Crop Factor Padding",
     "FG_KSampler"                    : "🗑️ KSampler for Qwen Image Edit",
     "FG_LABColorTransfer"            : "🗑️ LAB Color Transfer",
@@ -173,7 +183,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FG_Minimum_Maximum"             : "🗑️ Minimum + Maximum",
     "FG_ModelReferenceLatentMethod"  : "🗑️ Edit Model Reference Method",
     "FG_PurgeMemory"                 : "🗑️ Purge Memory",
-    "FG_ResourceManager"             : "🗑️ Resource Manager",
     "FG_SaveConditioning"            : "🗑️ Save Conditioning To Disk",
     "FG_SaveImage"                   : "🗑️ Save Image",
     "FG_SaveVideo"                   : "🗑️ Save Video",
@@ -181,8 +190,12 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FG_ShowText"                    : "🗑️ Show Text",
     "FG_UnifiedModelsLoader"         : "🗑️ Unified Models Loader",
     "FG_WD14Tagger"                  : "🗑️ WD14 Tagger (Booru Tags)",
-    "FG_XPUGuard"                    : "🗑️ XPU Guard (Device Health)",
     "FG_NoisySeeder"                 : "🗑️ Noisy Seeder",
+
+    "FG_ResourceManager"             : "🗑️ Resource Manager",
+    "FG_XPUGuard"                    : "🗑️ XPU Guard (Device Health)",
+    "FG_YuE2XPUAccel"                : "🗑️ YuE2 XPU Accelerator",
+    "FG_MiniMaxMusicXPUAccel"        : "🗑️ MiniMaxMusicH3 XPU Accelerator",
 
     "AnimaIPAdapterApply"    : "🗑️ Anima IP-Adapter Apply",
     "AnimaIPAdapterLoader"   : "🗑️ Anima IP-Adapter Loader",
