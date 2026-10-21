@@ -9,6 +9,7 @@ app.registerExtension({
         const garbage_nodes = [
             "FG_Advanced_KSampler",
             "FG_AnimaEasyControlPatch",
+            "FG_AnySwitch",
             "FG_ApplyControlNet",
             "FG_ApplyCosmosReferenceLatent",
             "FG_BoxFillwCoordinates",

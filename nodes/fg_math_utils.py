@@ -26,7 +26,7 @@ class FG_MinimumMaximum:
                 "int_2": ("INT", {"default": 0, "forceInput": True}),
             },
             "optional": {
-                "multiplier": ("INT", {"tooltip": "Multiply the output by a given value."}),
+                "multiplier": ("INT", {"default": 1, "tooltip": "Multiply the output by a given value."}),
             },
         }
 
@@ -87,3 +87,69 @@ class FG_IntFloatOut:
             return (true_int, true_float, switch)
 
         return (false_int, false_float, switch)
+
+
+"""
+┌─────────────────────────────────────┐
+│             Any Switch              │
+├─────────────────────────────────────┤
+│ ○ on_true_0            switch    ○  │
+│ ○ on_false_0           MODEL_0   ○  │
+│ ○ on_true_1            IMAGE_1   ○  │
+│ ○ on_false_1           out_2     ○  │  <- spare pair, grows on connect
+│ ○ on_true_2                         │
+│ ○ on_false_2                        │
+│ <SWITCH true/false>                 │
+└─────────────────────────────────────┘
+Pair N routes on_true_N or on_false_N to out_N. Only the selected side is
+evaluated (lazy), so an unused LoRA loader / image load never runs.
+"""
+
+
+class AnyType(str):
+    """Wildcard type: compares equal to every other type during validation."""
+    def __ne__(self, other):
+        return False
+
+
+ANY = AnyType("*")
+MAX_PAIRS = 16  # hard ceiling; the JS only shows what's in use + 1 spare
+
+
+class FG_AnySwitch:
+    @classmethod
+    def INPUT_TYPES(cls):
+        optional = {}
+        for i in range(MAX_PAIRS):
+            optional[f"on_true_{i}"] = (ANY, {"lazy": True})
+            optional[f"on_false_{i}"] = (ANY, {"lazy": True})
+        return {
+            "required": {
+                "switch": ("BOOLEAN", {"default": True, "label_on": "true", "label_off": "false"}),
+            },
+            "optional": optional,
+        }
+
+    # Output 0 is the switch itself; out_N lives at slot N + 1. The JS only
+    # ever trims/grows from the END so indices stay aligned with this tuple.
+    RETURN_TYPES = ("BOOLEAN",) + (ANY,) * MAX_PAIRS
+    RETURN_NAMES = ("switch",) + tuple(f"out_{i}" for i in range(MAX_PAIRS))
+    FUNCTION = "execute"
+    CATEGORY = "Farrenzo's Garbage/Utils"
+
+    @staticmethod
+    def _prefix(switch):
+        return "on_true_" if switch else "on_false_"
+
+    def check_lazy_status(self, switch, **kwargs):
+        # Linked-but-unevaluated lazy inputs arrive as None; unlinked ones are
+        # absent entirely. Request only the selected side.
+        prefix = self._prefix(switch)
+        return [k for k, v in kwargs.items() if k.startswith(prefix) and v is None]
+
+    def execute(self, switch, **kwargs):
+        prefix = self._prefix(switch)
+        # An unconnected selected side yields None for that out_N.
+        return (switch,) + tuple(kwargs.get(f"{prefix}{i}") for i in range(MAX_PAIRS))
+
+

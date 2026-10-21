@@ -5,14 +5,13 @@ from .fg_advanced_ksampler    import FG_Advanced_KSampler
 from .fg_canny_detect         import FG_CannyDetect
 from .fg_CLIP_text_encode     import FG_CLIPTextEncode
 from .fg_controlnet           import FG_ApplyControlNet
-from .fg_coordinates_box_fill import FG_CoordinatesBoxFill, FG_MaskBackdrop
 from .fg_empty_latent         import FG_EmptyLatent
 from .fg_image_scale          import FG_ImageScaler, FG_CropFactorPadding
 from .fg_lab_color_transfer   import FG_LABColorTransfer
 from .fg_load_vae             import FG_LatentTransfer
 from .fg_load_image           import FG_LoadImage
 from .fg_lora_loader          import FG_LoraLoader
-from .fg_math_utils           import FG_MinimumMaximum, FG_IntFloatOut
+from .fg_math_utils           import FG_AnySwitch, FG_IntFloatOut, FG_MinimumMaximum
 from .fg_model_reference      import FG_ModelReferenceLatentMethod
 from .fg_resource_manager     import FG_ResourceManager
 from .fg_purge_memory         import FG_PurgeMemory
@@ -29,6 +28,12 @@ from .fg_conditioning_cache   import FG_SaveConditioningLatent, FG_LoadCondition
 from .fg_step_inspect         import FG_StepInspect
 from .fg_noisy_seeder         import FG_NoisySeeder
 from .fg_seed_variance_enhancer import FG_SeedVarianceEnhancer
+from .fg_image_mask_utils     import (
+    FG_MaskBackdrop,
+    FG_CoordinatesBoxFill,
+    FG_AutoCropnClip,
+    FG_AutoCropnClipReStitcher
+)
 from .fg_linework_composite import (
     FG_ColorMap,
     FG_BubbleTint,
@@ -83,6 +88,9 @@ from .fg_inpaint_canvas import (
 NODE_CLASS_MAPPINGS = {
     "FG_Advanced_KSampler"           : FG_Advanced_KSampler,
     "FG_ApplyControlNet"             : FG_ApplyControlNet,
+    "FG_AnySwitch"                   : FG_AnySwitch,
+    "FG_AutoCropnClip"               : FG_AutoCropnClip,
+    "FG_AutoCropnClipReStitcher"     : FG_AutoCropnClipReStitcher,
     "FG_ApplyCosmosReferenceLatent"  : FG_ApplyCosmosReferenceLatent,
     "FG_BoxFillwCoordinates"         : FG_CoordinatesBoxFill,
     "FG_CropFactorPadding"           : FG_CropFactorPadding,
@@ -163,8 +171,11 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FG_Advanced_KSampler"           : "🗑️ Advanced KSampler",
     "FG_ApplyControlNet"             : "🗑️ Apply Advanced ControlNet",
     "FG_ApplyCosmosReferenceLatent"  : "🗑️ Anima Apply Cosmos Reference Latent",
-    "FG_BoxFillwCoordinates"         : "🗑️ Coordinate Box Fill",
+    "FG_AnySwitch"                   : "🗑️ Any Switcher",
+    "FG_AutoCropnClip"               : "✂️ Auto Crop & Clip",
+    "FG_AutoCropnClipReStitcher"     : "🪡 Auto Crop & Clip ReStitcher",
     "FG_BubbleTint"                  : "🗑️ Bubble Tint (colour lettering)",
+    "FG_BoxFillwCoordinates"         : "🗑️ Coordinate Box Fill",
     "FG_CannyDetect"                 : "🗑️ Advanced Edge Detector",
     "FG_CLIPTextEncode"              : "🗑️ Enhanced CLIP Text Encode",
     "FG_CombinedImageTagger"         : "🗑️ Combined Image Tagger",
@@ -248,4 +259,3 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 # Inpaint Canvas: keep the upstream class keys so Scumble / Renzo Studio recipes match.
 NODE_CLASS_MAPPINGS.update(_INPAINT_CANVAS_NODES)
 NODE_DISPLAY_NAME_MAPPINGS.update({k: "🎨 " + v for k, v in _INPAINT_CANVAS_NAMES.items()})
-
