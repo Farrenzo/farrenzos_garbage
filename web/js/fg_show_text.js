@@ -1,5 +1,5 @@
-import { app } from "../../../scripts/app.js";
-import { ComfyWidgets } from "../../../scripts/widgets.js";
+const { app } = window.comfyAPI.app;
+const { ComfyWidgets } = window.comfyAPI.widgets;
 
 app.registerExtension({
     name: "ShowText",

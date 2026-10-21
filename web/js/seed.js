@@ -1,5 +1,5 @@
-import { app } from "../../../scripts/app.js";
-import { api } from "../../../scripts/api.js";
+const { app } = window.comfyAPI.app;
+const { api } = window.comfyAPI.api;
 
 const NODE_TYPE = "FG_NoisySeeder";
 

@@ -1,4 +1,4 @@
-import { app } from "../../../scripts/app.js";
+const { app } = window.comfyAPI.app;
 
 // Show the bbox_model and bbox_threshold widgets only while bbox_detect is on.
 app.registerExtension({
