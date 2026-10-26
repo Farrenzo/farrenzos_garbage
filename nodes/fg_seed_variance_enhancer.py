@@ -1,12 +1,13 @@
-import nodes
 import torch
 import node_helpers
-import logging
+from ._fg_helperfunctions import log
 
-#Released under the terms of the MIT No Attribution License
 VERSION = "2.2"
 
 class FG_SeedVarianceEnhancer:
+    def __init__(self):
+        self.NODE_NAME = "FG Seed Variance Enhancer"
+
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -30,7 +31,7 @@ class FG_SeedVarianceEnhancer:
     #prints to console statistics about a tensor
     def log_tensor_statistics(self, tensor):
         if not isinstance(tensor, torch.Tensor):
-            logging.warning("SeedVarianceEnhancer received a conditioning with no Tensor")
+            log(f"{self.NODE_NAME}received a conditioning with no Tensor.", message_type="warning")
             return
 
         # Find null sequences
@@ -52,15 +53,15 @@ class FG_SeedVarianceEnhancer:
             max_val = torch.max(tensor).item()
 
         # Log statistics to console
-        logging.info(f"Embedding Tensor Statistics:  (from SeedVarianceEnhancer)")
+        log(f"{self.NODE_NAME}: Embedding Tensor Statistics:  (from SeedVarianceEnhancer)")
         if first_null != -1:
             # count null sequences
             number_of_null_seq = 0
             for i in null_sequences:
                 if i == 0:
                     number_of_null_seq += 1
-            logging.info(f"null sequences:   index of first: {first_null}   Index of last nonnull: {last_nonnull}   total: {number_of_null_seq}")
-        logging.info(f"  Dimensions: {', '.join(map(str, tensor.shape))}   Min: {min_val:.6f}   Max: {max_val:.6f}   Mean: {mean:.6f}   Standard Deviation: {std:.6f}   Try strength in range {std/10:.6f} - {std*10:.6f}")
+            log(f"{self.NODE_NAME}: null sequences:   index of first: {first_null}   Index of last nonnull: {last_nonnull}   total: {number_of_null_seq}.")
+        log(f"{self.NODE_NAME}: Dimensions: {', '.join(map(str, tensor.shape))}   Min: {min_val:.6f}   Max: {max_val:.6f}   Mean: {mean:.6f}   Standard Deviation: {std:.6f}   Try strength in range {std/10:.6f} - {std*10:.6f}")
 
 
     # searches for sequences within a tensor that contain all null bytes
@@ -96,28 +97,28 @@ class FG_SeedVarianceEnhancer:
         # Check for early return conditions
         if len(conditioning) < 1 or len(conditioning[0]) < 2 or ( len(conditioning) == 2 and len(conditioning[1]) < 2 ):
             if log_to_console:
-                logging.warning("SeedVarianceEnhancer received an empty conditioning. Passing it through unchanged.")
+                log(f"{self.NODE_NAME}: received an empty conditioning. Passing it through unchanged.", message_type="warning")
             return (conditioning,)
         if strength == 0:
             if log_to_console:
-                logging.warning(f"SeedVarianceEnhancer is disabled. Strength is set to zero. Passing conditioning through unchanged.")
+                log(f"{self.NODE_NAME} is disabled. Strength is set to zero. Passing conditioning through unchanged.", message_type="warning")
                 self.log_tensor_statistics(conditioning[0][0])
             return (conditioning,)
         if noise_insert == "disabled":
             if log_to_console:
-                logging.warning("SeedVarianceEnhancer is disabled. Passing conditioning through unchanged.")
+                log(f"{self.NODE_NAME}: is disabled. Passing conditioning through unchanged.", message_type="warning")
                 self.log_tensor_statistics(conditioning[0][0])
             return (conditioning,)
 
         if len(conditioning) > 2 and log_to_console:
-            logging.warning("SeedVarianceEnhancer will only use the first two embeddings from this conditioning.")
+            log(f"{self.NODE_NAME}: will only use the first two embeddings from this conditioning.", message_type="warning")
 
         reset_seed = True # By default, we will use new seed behavior in version 2.2 and up
         if int(strength / 1000000000) == 1: # if the user added 1 billion to strength, we will revert to old seed behavior
             strength -= 1000000000
             reset_seed = False
             if log_to_console:
-                logging.info("SeedVarianceEnhancer detected 1 billion added to strength. Subtracting the 1B and reverting to v2.1 seed behavior.")
+                log(f"{self.NODE_NAME} has detected 1 billion added to strength. Subtracting the 1B and reverting to v2.1 seed behavior.")
 
         # Select the embedding we will work with
         if len(conditioning) == 1:
@@ -172,7 +173,7 @@ class FG_SeedVarianceEnhancer:
 
                 if first_null > -1:  # There are some null sequences
                     if log_to_console:
-                        logging.info(f"SeedVarianceEnhancer is masking null sequence from noise")
+                        log(f"{self.NODE_NAME}: is masking null sequence from noise.")
 
                     # Create null_mask from null_sequences, reshape, and expand
                     null_mask_tensor = ~torch.tensor(null_sequences, device=t[0].device, dtype=torch.bool)
@@ -206,7 +207,7 @@ class FG_SeedVarianceEnhancer:
 
         else: # if t[0] was not a Tensor
             if log_to_console:
-                logging.warning("SeedVarianceEnhancer received a conditioning with no Tensor. Passing it through untouched.")
+                log(f"{self.NODE_NAME}: received a conditioning with no Tensor. Passing it through untouched.", message_type="warning")
             return (conditioning,)
 
 

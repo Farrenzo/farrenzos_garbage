@@ -238,13 +238,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "MiniMaxH3AutoChain":                  "⚙️ H3 Auto Chain + Stitch",
     "MiniMaxH3AutoChainFrameReference":    "⚙️ H3 Auto Chain Frame Reference",
 
-    "UnetLoaderGGUF"          : "🎛️ UnetLoaderGGUF",
-    "CLIPLoaderGGUF"          : "🎛️ CLIPLoaderGGUF",
-    "DualCLIPLoaderGGUF"      : "🎛️ DualCLIPLoaderGGUF",
-    "TripleCLIPLoaderGGUF"    : "🎛️ TripleCLIPLoaderGGUF",
-    "QuadrupleCLIPLoaderGGUF" : "🎛️ QuadrupleCLIPLoaderGGUF",
-    "UnetLoaderGGUFAdvanced"  : "🎛️ UnetLoaderGGUFAdvanced",
-
     # Experimental
     "FG_HueCorrect"    : "🗑️ Hue Correct (LAB)",
     "FG_ImageForensics": "🗑️ Image Forensics",
@@ -252,7 +245,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FG_MaskBackdrop"  : "🗑️ Mask Backdrop",
 
     "FG_ColorPicker": "🗑️ Color Picker",
-    "FG_ColorMap": "🗑️ Color Map (for Bubble Tint)",
+    "FG_ColorMap"   : "🗑️ Color Map (for Bubble Tint)",
     "FG_SeedVarianceEnhancer": "🎲 Seed Variance Enhancer"
 }
 

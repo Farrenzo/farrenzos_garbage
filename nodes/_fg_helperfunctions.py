@@ -13,10 +13,33 @@ import json
 import torch
 import datetime
 import numpy as np
-from typing import List
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
 import comfy.model_management as comfy_mm
+from PIL import Image, ImageDraw, ImageFont
+from typing import List, Literal, TypeAlias 
+
+MessageLogTypes: TypeAlias = Literal[
+    "info",    "bold_blue",
+    "finish",  "bold_cyan",
+    "warning", "bold_green",
+    "error",   "bold_grey",
+    "blue",    "bold_purple",
+    "cyan",    "bold_red",
+    "green",   "bold_white",
+    "grey",    "bold_yellow",
+    "purple",  "backblack",
+    "red",     "backblue",
+    "white",   "backcyan",
+    "yellow",  "backgray",
+
+    "backgreen",   "blink",
+    "backpurple",  "bold",
+    "backred",     "concealed",
+    "backyellow",  "reset",
+    "boldbackred", "reverse",
+
+    "underscore",
+]
 
 SCALING_METHODS = {
     "box"     : Image.BOX,
@@ -26,6 +49,8 @@ SCALING_METHODS = {
     "nearest" : Image.NEAREST,
     "bilinear": Image.BILINEAR,
 }
+
+
 
 _BACKEND_NAMES = ("cuda", "xpu", "mps", "npu", "mtia", "hpu")
 _ACCELERATORS = None
@@ -39,8 +64,8 @@ MODEL_TYPES = global_settings["model_types"]
 ASPECT_RATIOS = global_settings["aspect_ratios"]
 TERMINAL_COLOR_CODES = global_settings["terminal_color_codes"]
 
-def log(message:str, message_type:str="info") -> None:
-    message_types ={
+def log(message:str, message_type:MessageLogTypes="info") -> None:
+    message_types = {
         "info"   :TERMINAL_COLOR_CODES["bold_blue"],
         "finish" :TERMINAL_COLOR_CODES["green"],
         "warning":TERMINAL_COLOR_CODES["bold_yellow"],

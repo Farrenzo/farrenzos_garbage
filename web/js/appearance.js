@@ -12,6 +12,8 @@ app.registerExtension({
             "FG_AnySwitch",
             "FG_ApplyControlNet",
             "FG_ApplyCosmosReferenceLatent",
+            "FG_AutoCropnClip",
+            "FG_AutoCropnClipReStitcher",
             "FG_BoxFillwCoordinates",
             "FG_BubbleTint",
             "FG_CannyDetect",
