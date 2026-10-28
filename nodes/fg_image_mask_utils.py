@@ -437,6 +437,8 @@ class FG_AutoCropnClip:
                 "image": ("IMAGE",),
                 "mask": ("MASK", {"tooltip": "Area to inpaint. Everything inside it is fully replaced on stitch."}),
 
+                "skip_node": ("BOOLEAN", {"default": False,
+                    "tooltip": "Skip this node if you do not want a crop, or if the crop is all over the place."}),
                 "output_resize_to_target_size": ("BOOLEAN", {"default": True,
                     "tooltip": "On: Lanczos-resize the crop to the target size. Off: crop at 1:1, no resampling at all."}),
                 "output_target_width": ("INT", {"default": 1024, "min": 64, "max": 16384, "step": 1,
@@ -458,8 +460,28 @@ class FG_AutoCropnClip:
     CATEGORY = "Farrenzo's Garbage/Image"
     DESCRIPTION = "Crops an image around a mask for inpainting."
 
-    def crop_me(self, image, mask, output_resize_to_target_size, output_target_width,
-                output_target_height, output_padding, mask_blend_pixels, mask_extend_factor):
+    def crop_me(
+        self,
+        image,
+        mask,
+        skip_node,
+        output_resize_to_target_size,
+        output_target_width,
+        output_target_height,
+        output_padding,
+        mask_blend_pixels,
+        mask_extend_factor
+    ):
+        if skip_node:
+            stitcher = {
+                "requires_stitch": False,
+                "original": None,
+                "rect": None,
+                "blend": None,
+                "context": None,
+            }
+            return (stitcher, image, mask)
+
         device = image.device
         batch, img_h, img_w = image.shape[0], image.shape[1], image.shape[2]
         pad_mult = int(output_padding)
@@ -522,11 +544,15 @@ class FG_AutoCropnClip:
         out_img = _lanczos_resize(crop_img, out_h, out_w)
         out_mask = crop_hard
         if (out_h, out_w) != (ch, cw):
-            out_mask = F.interpolate(crop_hard.unsqueeze(1), size=(out_h, out_w),
-                                     mode="bilinear", align_corners=False).squeeze(1)
+            out_mask = F.interpolate(
+                crop_hard.unsqueeze(1), 
+                size=(out_h, out_w),
+                mode="bilinear", align_corners=False
+            ).squeeze(1)
             out_mask = (out_mask > 0.5).float()
 
         stitcher = {
+            "requires_stitch": True,
             "original": image.cpu(),
             "rect": (left, top, cw, ch),
             "blend": blend.cpu(),
@@ -569,6 +595,9 @@ class FG_AutoCropnClipReStitcher:
         return torch.where(enough, out, proc)
 
     def inpaint_stitch(self, stitcher, processed_image, color_match=True):
+        if not stitcher["requires_stitch"]:
+            return (processed_image,)
+
         device = processed_image.device
         batch = processed_image.shape[0]
         left, top, cw, ch = stitcher["rect"]
