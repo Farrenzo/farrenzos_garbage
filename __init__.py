@@ -65,6 +65,8 @@ log(f"v{VERSION} has loaded {len(NODE_DISPLAY_NAME_MAPPINGS)} nodes.", "finish")
 for _, n_name in NODE_DISPLAY_NAME_MAPPINGS.items():
     print(f"    \033[0;37m {n_name} \033[0m")
 
+
+from .nodes.fg_assistant import routes as _routes
 WEB_DIRECTORY = "./web"
 __all__ = [
     "NODE_CLASS_MAPPINGS",

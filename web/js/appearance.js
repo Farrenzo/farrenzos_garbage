@@ -40,6 +40,7 @@ app.registerExtension({
             "FG_NoisySeeder",
             "FG_PurgeMemory",
             "FG_ResourceManager",
+            "FG_AnimaRoleRefKV",
             "FG_SaveConditioning",
             "FG_SaveImage",
             "FG_SaveVideo",

@@ -44,6 +44,7 @@ from .fg_linework_composite import (
 from .fg_anima.anima_lllite_inspect     import FG_LLLiteCondPreview
 from .fg_anima.anima_controlnet_nodes   import FG_AnimaLLLiteApply
 from .fg_anima.fg_easy_controller_patch import FG_AnimaEasyControlPatch
+from .fg_anima.fg_anima_role_ref_kv     import FG_AnimaRoleRefKV
 from .fg_anima.anima_regional_prompt_nodes import ApplyAnimaRegionalConditioningPatch, FG_MaskFromRGBCMYBW
 from .fg_anima.anima_ipadapter_nodes import (
     AnimaIPAdapterLoader,
@@ -80,6 +81,8 @@ MiniMaxH3AutoChainFrameReference,
 from .fg_minimax.fg_minimax_h3 import FG_MiniMaxH3_Conditioner
 from .fg_yue2.fg_yue2_node import FG_YuE2XPUAccel, FG_MiniMaxMusicXPUAccel
 
+
+
 from .fg_inpaint_canvas import (
     NODE_CLASS_MAPPINGS as _INPAINT_CANVAS_NODES,
     NODE_DISPLAY_NAME_MAPPINGS as _INPAINT_CANVAS_NAMES,
@@ -112,6 +115,7 @@ NODE_CLASS_MAPPINGS = {
     "FG_NoisySeeder"                 : FG_NoisySeeder,
     "FG_PurgeMemory"                 : FG_PurgeMemory,
     "FG_ResourceManager"             : FG_ResourceManager,
+    "FG_AnimaRoleRefKV"              : FG_AnimaRoleRefKV,
     "FG_SaveConditioning"            : FG_SaveConditioningLatent,
     "FG_SaveImage"                   : FG_SaveImage,
     "FG_SaveVideo"                   : FG_SaveVideo,
@@ -194,6 +198,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FG_Minimum_Maximum"             : "🗑️ Minimum + Maximum",
     "FG_ModelReferenceLatentMethod"  : "🗑️ Edit Model Reference Method",
     "FG_PurgeMemory"                 : "🗑️ Purge Memory",
+    "FG_AnimaRoleRefKV"              : "🗑️ Anima Role Reference KV Patch",
     "FG_SaveConditioning"            : "🗑️ Save Conditioning To Disk",
     "FG_SaveImage"                   : "🗑️ Save Image",
     "FG_SaveVideo"                   : "🗑️ Save Video",

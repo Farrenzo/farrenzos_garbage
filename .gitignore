@@ -218,3 +218,15 @@ fun_colors.py
 *.safetensors
 .vscode
 *.pth
+
+chatbot_config.json
+chatbot_history.json
+kb_cache/
+# local databases (kb + memory + generated stores)
+*.sqlite
+*.sqlite-*
+debug.log
+debug.log*
+tests/report.json
+__pycache__/
+*.pyc

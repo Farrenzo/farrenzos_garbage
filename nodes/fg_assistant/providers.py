@@ -1,0 +1,1151 @@
+from __future__ import annotations
+
+import asyncio
+import threading
+import json
+import re
+import time
+from typing import Any, AsyncIterator, Mapping
+from urllib.parse import urlsplit, urlunsplit
+
+import aiohttp
+
+from .embedding_text import embedding_parts
+
+
+from .debug import debug_log as _debug_log
+
+ANTHROPIC_VERSION = "2023-06-01"
+ANTHROPIC_FALLBACK_MAX_TOKENS = 8192
+_PROVIDER_DEFAULT_URLS = {
+    "strata": "http://p40:8080/v1", "lmstudio": "http://127.0.0.1:1234/v1",
+    "ollama": "http://127.0.0.1:11434/v1", "openai": "https://api.openai.com/v1",
+    "anthropic": "https://api.anthropic.com",
+}
+
+
+def embedding_connection(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Resolve embedding connection; an empty provider retains legacy chat routing."""
+    embedding = config.get("embedding") or {}
+    if not isinstance(embedding, Mapping) or not embedding.get("provider"):
+        result = dict(config)
+        result["embed_model"] = (embedding.get("model") if isinstance(embedding, Mapping) else "") or config.get("embed_model", "")
+        return result
+    result = dict(config)
+    result.update({key: embedding.get(key, "") for key in ("provider", "base_url", "api_key")})
+    result["base_url"] = result["base_url"] or _PROVIDER_DEFAULT_URLS.get(result["provider"], "")
+    result["embed_model"] = embedding.get("model") or ""
+    return result
+
+
+def embedding_identity(config: Mapping[str, Any], model: str) -> str:
+    connection = embedding_connection(config)
+    return _connection_identity(connection, model)
+
+
+def _connection_identity(config: Mapping[str, Any], model: str) -> str:
+    parsed = urlsplit(_base_url(config).rstrip("/"))
+    endpoint = urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), parsed.path, parsed.query, parsed.fragment))
+    return "|".join((str(config.get("provider") or ""), endpoint, str(model or "")))
+
+
+_activity_condition = threading.Condition()
+_active_models: dict[str, int] = {}
+_used_embedding_models: set[str] = set()
+_idle_timers: dict[str, threading.Timer] = {}
+_idle_generations: dict[str, int] = {}
+_unloading_models: set[str] = set()
+_idle_configs: dict[str, tuple[dict[str, Any], str]] = {}
+
+
+def _idle_seconds(config: Mapping[str, Any]) -> int:
+    value = (config.get("limits") or {}).get("embedding_idle_unload_seconds", 60)
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 60
+
+
+def _timer_unload(key: str, generation: int) -> None:
+    with _activity_condition:
+        if generation != _idle_generations.get(key) or _active_models.get(key, 0):
+            return
+        target = _idle_configs.get(key)
+        if not target:
+            return
+        config, model = target
+    current_idle = _idle_seconds(config)
+    try:
+        try:
+            from .config_store import CONFIG_STORE
+        except ImportError:
+            from config_store import CONFIG_STORE
+        current_idle = _idle_seconds(CONFIG_STORE.resolved())
+    except Exception:
+        pass
+    if current_idle <= 0:
+        with _activity_condition:
+            _idle_timers.pop(key, None)
+        return
+    with _activity_condition:
+        if generation != _idle_generations.get(key) or _active_models.get(key, 0):
+            return
+        target = _idle_configs.get(key)
+        if not target:
+            return
+        config, model = target
+        _unloading_models.add(key)
+    try:
+        result = asyncio.run(unload_embedding_model(config, model))
+        if result.get("unsupported"):
+            _debug_log("provider", "embedding.unload_skipped", model=model, reason=result.get("reason"))
+        else:
+            _debug_log("provider", "embedding.unload_idle", model=model, unloaded=result.get("unloaded", []))
+        with _activity_condition:
+            _used_embedding_models.discard(key)
+    except Exception:
+        pass
+    finally:
+        with _activity_condition:
+            _unloading_models.discard(key)
+            _idle_timers.pop(key, None)
+            _activity_condition.notify_all()
+
+
+def _schedule_idle_unload(key: str, config: Mapping[str, Any], model: str) -> None:
+    seconds = _idle_seconds(config)
+    if seconds <= 0 or key not in _used_embedding_models:
+        return
+    previous = _idle_timers.pop(key, None)
+    if previous:
+        previous.cancel()
+    generation = _idle_generations.get(key, 0) + 1
+    _idle_generations[key] = generation
+    if key not in _idle_configs:
+        _idle_configs[key] = (dict(config), model)
+    timer = threading.Timer(seconds, _timer_unload, args=(key, generation))
+    timer.daemon = True
+    _idle_timers[key] = timer
+    timer.start()
+
+
+def _begin_model_activity(key: str) -> None:
+    with _activity_condition:
+        while key in _unloading_models:
+            _activity_condition.wait()
+        timer = _idle_timers.pop(key, None)
+        if timer:
+            timer.cancel()
+        _idle_generations[key] = _idle_generations.get(key, 0) + 1
+        _active_models[key] = _active_models.get(key, 0) + 1
+
+
+def _end_model_activity(key: str, config: Mapping[str, Any], model: str, embedding_used: bool) -> None:
+    with _activity_condition:
+        active = max(0, _active_models.get(key, 1) - 1)
+        if active:
+            _active_models[key] = active
+        else:
+            _active_models.pop(key, None)
+        if embedding_used:
+            _used_embedding_models.add(key)
+            _idle_configs[key] = (dict(config), model)
+        if active == 0:
+            _schedule_idle_unload(key, config, model)
+        _activity_condition.notify_all()
+
+
+async def _acquire_model_activity(key: str, config: Mapping[str, Any], model: str) -> None:
+    lease = asyncio.create_task(asyncio.to_thread(_begin_model_activity, key))
+    try:
+        await asyncio.shield(lease)
+    except asyncio.CancelledError:
+        # to_thread cannot be cancelled; release its eventual lease before propagating.
+        await lease
+        await asyncio.to_thread(_end_model_activity, key, config, model, False)
+        raise
+
+
+async def _release_model_activity(key: str, config: Mapping[str, Any], model: str, embedding_used: bool) -> None:
+    await asyncio.to_thread(_end_model_activity, key, config, model, embedding_used)
+
+DATA_URL_RE = re.compile(r"^data:(?P<media>[^;,]+);base64,(?P<data>.*)$", re.S)
+
+
+def _base_url(config: Mapping[str, Any]) -> str:
+    base = str(config.get("base_url") or "").rstrip("/")
+    if config.get("provider") == "strata" and base:
+        parsed = urlsplit(base)
+        if parsed.path in ("", "/"):
+            base = urlunsplit((parsed.scheme, parsed.netloc, "/v1", parsed.query, parsed.fragment))
+    return base
+
+
+def _positive_int(value: Any) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return number if number > 0 else 0
+
+
+def _thinking_enabled(config: Mapping[str, Any]) -> bool:
+    thinking = config.get("thinking")
+    if isinstance(thinking, Mapping):
+        return thinking.get("enabled", True) is not False
+    return True
+
+
+def _openai_reasoning_effort(config: Mapping[str, Any]) -> str | None:
+    """Return an effort value only for documented OpenAI models on OpenAI's API."""
+    if config.get("provider") != "openai":
+        return None
+    base = str(config.get("base_url") or "").rstrip("/").lower()
+    if base not in {"https://api.openai.com/v1", "https://api.openai.com"}:
+        return None
+    thinking = config.get("thinking")
+    level = str(thinking.get("level", "auto") if isinstance(thinking, Mapping) else "auto").lower()
+    if level not in {"off", "low", "medium", "high"}:
+        return None
+    model = str(config.get("model") or "").lower()
+    if model == "gpt-5.1" or re.fullmatch(r"gpt-5\.1-\d{4}-\d{2}-\d{2}", model):
+        allowed = {"off": "none", "low": "low", "medium": "medium", "high": "high"}
+    else:
+        return None
+    return allowed.get(level)
+
+
+def _timeout() -> aiohttp.ClientTimeout:
+    return aiohttp.ClientTimeout(total=None)
+
+
+def _is_anthropic(config: Mapping[str, Any]) -> bool:
+    return config.get("provider") == "anthropic"
+
+
+def _headers(config: Mapping[str, Any]) -> dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    token = str(config.get("api_key") or "").strip()
+    if _is_anthropic(config):
+        headers["anthropic-version"] = ANTHROPIC_VERSION
+        if token:
+            headers["x-api-key"] = token
+    elif token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def _limit_chars(config: Mapping[str, Any] | None, name: str) -> int:
+    if not config:
+        return 0
+    try:
+        return int((config.get("limits") or {}).get(name, 0) or 0)
+    except (TypeError, ValueError, AttributeError):
+        return 0
+
+
+async def _read_error(response: aiohttp.ClientResponse, config: Mapping[str, Any] | None = None) -> str:
+    detail = await response.text()
+    limit = _limit_chars(config, "error_detail_chars")
+    if limit and limit > 0:
+        detail = detail[:limit]
+    return f"Provider returned HTTP {response.status}: {detail}"
+
+
+def _context_overflow_retry_tokens(status: int, detail: str, current: int) -> int | None:
+    """Return a provider-stated output-token allowance for a context overflow.
+
+    Providers differ in their tokenizers, so don't estimate or trim input here.
+    Retry only when a 400 explicitly states an allowable maximum and the error
+    identifies a context-window overflow.
+    """
+    if status != 400 or current <= 1:
+        return None
+    lowered = detail.lower()
+    context_error = any(
+        marker in lowered
+        for marker in ("context length", "context window", "context_length", "context limit")
+    ) and any(marker in lowered for marker in ("exceed", "too many", "over the", "maximum"))
+    if not context_error:
+        return None
+    match = re.search(r"\bat most\s+([0-9][0-9,]*)\b", detail, re.IGNORECASE)
+    if not match:
+        return None
+    allowed = int(match.group(1).replace(",", ""))
+    return allowed if 0 < allowed < current else None
+
+
+async def list_models(config: Mapping[str, Any]) -> list[str]:
+    base = _base_url(config)
+    if _is_anthropic(config):
+        url = f"{base}/v1/models?limit=100"
+    else:
+        url = f"{base}/models"
+    async with aiohttp.ClientSession(timeout=_timeout()) as session:
+        async with session.get(url, headers=_headers(config)) as response:
+            if response.status >= 400:
+                raise RuntimeError(await _read_error(response, config))
+            payload = await response.json()
+    items = payload.get("data", payload.get("models", [])) if isinstance(payload, Mapping) else []
+    models = []
+    for item in items:
+        if isinstance(item, Mapping):
+            model_id = item.get("id") or item.get("name")
+            if model_id:
+                models.append(str(model_id))
+    return models
+
+
+def _tool_protocol(tools: list[Mapping[str, Any]]) -> str:
+    lines = [
+        "You do not have native tool calling. To use a tool, reply with a fenced JSON block:",
+        "```json",
+        '{"tool": "<name>", "arguments": { ... }}',
+        "```",
+        "You may output plain text alongside one or more tool blocks. After the tool runs you will",
+        "receive its result and can continue. Available tools:",
+    ]
+    for tool in tools:
+        function = tool.get("function", tool)
+        lines.append(f"- {function.get('name')}: {function.get('description', '')}")
+    return "\n".join(lines)
+
+
+def _with_system_protocol(
+    messages: list[Mapping[str, Any]], tools: list[Mapping[str, Any]]
+) -> list[Mapping[str, Any]]:
+    protocol = _tool_protocol(tools)
+    prepared = list(messages)
+    for index, message in enumerate(prepared):
+        if message.get("role") == "system":
+            prepared[index] = {"role": "system", "content": f"{message.get('content', '')}\n\n{protocol}"}
+            return prepared
+    return [{"role": "system", "content": protocol}, *prepared]
+
+
+def _anthropic_tools(tools: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    converted = []
+    for tool in tools:
+        function = tool.get("function", tool)
+        converted.append(
+            {
+                "name": function.get("name"),
+                "description": function.get("description", ""),
+                "input_schema": function.get("parameters", {"type": "object", "properties": {}}),
+            }
+        )
+    return converted
+
+
+def _anthropic_content(content: Any) -> Any:
+    if not isinstance(content, list):
+        return str(content)
+    blocks: list[dict[str, Any]] = []
+    for part in content:
+        if not isinstance(part, Mapping):
+            continue
+        part_type = part.get("type")
+        if part_type == "text":
+            blocks.append({"type": "text", "text": str(part.get("text", ""))})
+        elif part_type == "image_url":
+            url = str((part.get("image_url") or {}).get("url", ""))
+            match = DATA_URL_RE.match(url)
+            if match:
+                blocks.append(
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": match.group("media"),
+                            "data": match.group("data"),
+                        },
+                    }
+                )
+    return blocks or str(content)
+
+
+def _content_blocks(content: Any) -> list[dict[str, Any]]:
+    return content if isinstance(content, list) else [{"type": "text", "text": str(content)}]
+
+
+def _anthropic_messages(messages: list[Mapping[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+    system_parts: list[str] = []
+    converted: list[dict[str, Any]] = []
+    for message in messages:
+        role = message.get("role")
+        if role == "system":
+            system_parts.append(str(message.get("content", "")))
+            continue
+        if role == "tool":
+            block = {
+                "type": "tool_result",
+                "tool_use_id": message.get("tool_call_id"),
+                "content": str(message.get("content", "")),
+            }
+            if converted and converted[-1]["role"] == "user" and isinstance(converted[-1]["content"], list):
+                converted[-1]["content"].append(block)
+            else:
+                converted.append({"role": "user", "content": [block]})
+            continue
+        if role == "assistant":
+            blocks: list[dict[str, Any]] = []
+            if message.get("content"):
+                blocks.append({"type": "text", "text": str(message["content"])})
+            for call in message.get("tool_calls") or []:
+                function = call.get("function", {})
+                try:
+                    arguments = json.loads(function.get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    arguments = {}
+                blocks.append(
+                    {
+                        "type": "tool_use",
+                        "id": call.get("id"),
+                        "name": function.get("name"),
+                        "input": arguments,
+                    }
+                )
+            converted.append({"role": "assistant", "content": blocks or str(message.get("content", ""))})
+            continue
+        converted.append({"role": "user", "content": _anthropic_content(message.get("content", ""))})
+    merged: list[dict[str, Any]] = []
+    for message in converted:
+        if merged and merged[-1]["role"] == message["role"]:
+            merged[-1]["content"] = _content_blocks(merged[-1]["content"]) + _content_blocks(message["content"])
+        else:
+            merged.append(message)
+    return "\n\n".join(part for part in system_parts if part), merged
+
+
+async def _openai_chat(
+    config: Mapping[str, Any], messages: list[Mapping[str, Any]], tools: list[Mapping[str, Any]]
+) -> AsyncIterator[dict[str, Any]]:
+    max_tokens = _positive_int(config.get("max_tokens"))
+    body: dict[str, Any] = {
+        "model": config.get("model"),
+        "messages": messages,
+        "stream": True,
+        "temperature": config.get("temperature", 0.7),
+    }
+    # Auto mode resolves to half the model's context window; when the window is unknown the
+    # field is omitted so the provider applies its own default.
+    if max_tokens:
+        body["max_tokens"] = max_tokens
+    effort = _openai_reasoning_effort(config)
+    if effort:
+        body["reasoning_effort"] = effort
+    if tools and config.get("use_native_tools", True):
+        body["tools"] = tools
+        body["tool_choice"] = "auto"
+    url = f"{_base_url(config)}/chat/completions"
+    thinking = _thinking_enabled(config)
+    pending: dict[int, dict[str, str]] = {}
+    finish_reason = None
+    async with aiohttp.ClientSession(timeout=_timeout()) as session:
+        retried_context_budget = False
+        while True:
+            async with session.post(url, headers=_headers(config), json=body) as response:
+                if response.status >= 400:
+                    detail = await response.text()
+                    allowed = _context_overflow_retry_tokens(
+                        response.status, detail, _positive_int(body.get("max_tokens"))
+                    )
+                    if allowed and not retried_context_budget:
+                        body["max_tokens"] = allowed
+                        retried_context_budget = True
+                        _debug_log(
+                            "provider",
+                            "chat.context_budget_retry",
+                            requested=max_tokens,
+                            adjusted=allowed,
+                        )
+                        continue
+                    limit = _limit_chars(config, "error_detail_chars")
+                    if limit and limit > 0:
+                        detail = detail[:limit]
+                    yield {"type": "error", "error": f"Provider returned HTTP {response.status}: {detail}"}
+                    return
+                async for raw_line in response.content:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line or not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        event = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    if event.get("error"):
+                        yield {"type": "error", "error": str(event["error"])}
+                        return
+                    choices = event.get("choices") or []
+                    if not choices:
+                        continue
+                    choice = choices[0]
+                    delta = choice.get("delta", {}) or {}
+                    if thinking:
+                        reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+                        if reasoning:
+                            yield {"type": "reasoning", "text": reasoning}
+                    if delta.get("content"):
+                        yield {"type": "text", "text": delta["content"]}
+                    for call in delta.get("tool_calls") or []:
+                        index = call.get("index", 0)
+                        slot = pending.setdefault(index, {"id": "", "name": "", "arguments": ""})
+                        if call.get("id"):
+                            slot["id"] = call["id"]
+                        function = call.get("function") or {}
+                        if function.get("name"):
+                            slot["name"] = function["name"]
+                        if function.get("arguments"):
+                            slot["arguments"] += function["arguments"]
+                    if choice.get("finish_reason"):
+                        finish_reason = choice["finish_reason"]
+            break
+    for index in sorted(pending):
+        slot = pending[index]
+        if slot["name"]:
+            yield {"type": "tool_call", "id": slot["id"], "name": slot["name"], "arguments": slot["arguments"]}
+    yield {"type": "done", "finish_reason": finish_reason}
+
+
+async def _anthropic_chat(
+    config: Mapping[str, Any], messages: list[Mapping[str, Any]], tools: list[Mapping[str, Any]]
+) -> AsyncIterator[dict[str, Any]]:
+    system, anthropic_messages = _anthropic_messages(messages)
+    # Anthropic requires an explicit output limit. Auto mode resolves to half the context window;
+    # a direct call with no limit falls back to a sane default.
+    max_tokens = _positive_int(config.get("max_tokens")) or ANTHROPIC_FALLBACK_MAX_TOKENS
+    body: dict[str, Any] = {
+        "model": config.get("model"),
+        "messages": anthropic_messages,
+        "stream": True,
+        "temperature": config.get("temperature", 0.7),
+        "max_tokens": max_tokens,
+    }
+    if system:
+        body["system"] = system
+    if tools and config.get("use_native_tools", True):
+        body["tools"] = _anthropic_tools(tools)
+    url = f"{_base_url(config)}/v1/messages"
+    thinking = _thinking_enabled(config)
+    current_tool: dict[str, Any] | None = None
+    finish_reason = None
+    async with aiohttp.ClientSession(timeout=_timeout()) as session:
+        async with session.post(url, headers=_headers(config), json=body) as response:
+            if response.status >= 400:
+                yield {"type": "error", "error": await _read_error(response, config)}
+                return
+            async for raw_line in response.content:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                try:
+                    event = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                event_type = event.get("type")
+                if event_type == "content_block_start":
+                    block = event.get("content_block", {})
+                    if block.get("type") == "tool_use":
+                        current_tool = {"id": block.get("id"), "name": block.get("name"), "arguments": ""}
+                elif event_type == "content_block_delta":
+                    delta = event.get("delta", {})
+                    if delta.get("type") == "text_delta":
+                        yield {"type": "text", "text": delta.get("text", "")}
+                    elif delta.get("type") == "thinking_delta" and thinking:
+                        yield {"type": "reasoning", "text": delta.get("thinking", "")}
+                    elif delta.get("type") == "input_json_delta" and current_tool is not None:
+                        current_tool["arguments"] += delta.get("partial_json", "")
+                elif event_type == "content_block_stop":
+                    if current_tool is not None:
+                        yield {"type": "tool_call", **current_tool}
+                        current_tool = None
+                elif event_type == "message_delta":
+                    finish_reason = event.get("delta", {}).get("stop_reason", finish_reason)
+                elif event_type == "error":
+                    yield {"type": "error", "error": str(event.get("error", event))}
+                    return
+    yield {"type": "done", "finish_reason": finish_reason}
+
+
+async def _chat_events(
+    config: Mapping[str, Any], messages: list[Mapping[str, Any]], tools: list[Mapping[str, Any]]
+) -> AsyncIterator[dict[str, Any]]:
+    started = time.time()
+    first_text: float | None = None
+    first_reasoning: float | None = None
+    if not config.get("model"):
+        yield {"type": "error", "error": "No model selected. Open settings and choose a model."}
+        return
+    max_tokens = await resolved_max_tokens(config)
+    config = {**config, "max_tokens": max_tokens}
+    _debug_log(
+        "provider",
+        "chat.start",
+        provider=config.get("provider"),
+        model=config.get("model"),
+        messages=len(messages),
+        tools=len(tools),
+        native_tools=config.get("use_native_tools", True),
+        temperature=config.get("temperature"),
+        max_tokens=max_tokens,
+    )
+    if not config.get("use_native_tools", True) and tools:
+        messages = _with_system_protocol(messages, tools)
+
+    async def _relay() -> AsyncIterator[dict[str, Any]]:
+        nonlocal first_text, first_reasoning
+        if _is_anthropic(config):
+            stream = _anthropic_chat(config, messages, tools)
+        else:
+            stream = _openai_chat(config, messages, tools)
+        async for event in stream:
+            kind = event.get("type")
+            if kind == "reasoning" and first_reasoning is None:
+                first_reasoning = time.time()
+                _debug_log("provider", "chat.first_reasoning", ms=round((first_reasoning - started) * 1000))
+            elif kind == "text" and first_text is None:
+                first_text = time.time()
+                _debug_log("provider", "chat.first_token", ms=round((first_text - started) * 1000))
+            elif kind == "done":
+                _debug_log(
+                    "provider",
+                    "chat.done",
+                    finish_reason=event.get("finish_reason"),
+                    ms=round((time.time() - started) * 1000),
+                )
+            elif kind == "error":
+                _debug_log("provider", "chat.error", level="error", error=event.get("error"))
+            yield event
+
+    try:
+        async for event in _relay():
+            yield event
+    except aiohttp.ClientError as exc:
+        _debug_log("provider", "chat.error", level="error", error=f"client error: {exc}")
+        yield {"type": "error", "error": f"Could not reach provider: {exc}"}
+    except asyncio.TimeoutError:
+        _debug_log("provider", "chat.error", level="error", error="timeout")
+        yield {"type": "error", "error": "Provider request timed out."}
+
+
+async def chat_events(
+    config: Mapping[str, Any], messages: list[Mapping[str, Any]], tools: list[Mapping[str, Any]]
+) -> AsyncIterator[dict[str, Any]]:
+    model = str(config.get("model") or "").strip()
+    if not model:
+        async for event in _chat_events(config, messages, tools):
+            yield event
+        return
+    key = _connection_identity(config, model)
+    await _acquire_model_activity(key, config, model)
+    try:
+        async for event in _chat_events(config, messages, tools):
+            yield event
+    finally:
+        await _release_model_activity(key, config, model, False)
+
+
+def _api_root(config: Mapping[str, Any]) -> str:
+    base = _base_url(config)
+    return base[:-3] if base.endswith("/v1") else base
+
+
+_VISION_HINTS = (
+    "vl", "vision", "llava", "pixtral", "internvl", "minicpm-v", "gemma-3",
+    "gpt-4o", "gpt-4.1", "gpt-5", "o3", "o4",
+)
+
+
+async def _strata_model_info(config: Mapping[str, Any], model: str) -> Mapping[str, Any]:
+    """Read capabilities from the selected server without guessing from model names."""
+    try:
+        async with aiohttp.ClientSession(timeout=_timeout()) as session:
+            async with session.get(f"{_base_url(config)}/models", headers=_headers(config)) as response:
+                if response.status >= 400:
+                    return {}
+                payload = await response.json()
+        items = payload.get("data", []) if isinstance(payload, Mapping) else []
+        for item in items if isinstance(items, list) else []:
+            if isinstance(item, Mapping) and item.get("id") == model:
+                return item
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+        pass
+    return {}
+
+
+
+
+async def vision_support(config: Mapping[str, Any], model: str) -> bool | None:
+    provider = config.get("provider")
+    model = (model or "").strip()
+    if not model:
+        return None
+    if provider == "anthropic":
+        return True
+    if provider == "strata":
+        info = await _strata_model_info(config, model)
+        architecture = info.get("architecture")
+        modalities = architecture.get("input_modalities") if isinstance(architecture, Mapping) else None
+        return "image" in modalities if isinstance(modalities, list) else None
+    root = _api_root(config)
+    if provider == "lmstudio":
+        try:
+            async with aiohttp.ClientSession(timeout=_timeout()) as session:
+                async with session.get(f"{root}/api/v0/models", headers=_headers(config)) as response:
+                    if response.status < 400:
+                        payload = await response.json()
+                        for item in payload.get("data", []) if isinstance(payload, Mapping) else []:
+                            if isinstance(item, Mapping) and item.get("id") == model:
+                                return str(item.get("type", "")).lower() == "vlm"
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+            return None
+        return None
+    if provider == "ollama":
+        try:
+            async with aiohttp.ClientSession(timeout=_timeout()) as session:
+                async with session.post(f"{root}/api/show", headers=_headers(config), json={"model": model}) as response:
+                    if response.status < 400:
+                        payload = await response.json()
+                        capabilities = payload.get("capabilities") if isinstance(payload, Mapping) else []
+                        return "vision" in (capabilities or [])
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+            return None
+        return None
+    lowered = model.lower()
+    if any(hint in lowered for hint in _VISION_HINTS):
+        return True
+    return None
+
+
+SUMMARY_SYSTEM = (
+    "You compress conversation history for a ComfyUI assistant. Summarize the transcript concisely, "
+    "preserving the user's goals and preferences, workflow and node decisions, node ids and their "
+    "roles, prompts written, problems found and fixes applied, and any pending tasks. Use short "
+    "bullet points. Do not invent details that are not in the transcript."
+)
+
+
+async def context_window(config: Mapping[str, Any], model: str) -> int | None:
+    provider = config.get("provider")
+    if provider == "anthropic":
+        return 200000
+    if not model:
+        return None
+    if provider == "strata":
+        info = await _strata_model_info(config, model)
+        meta = info.get("meta")
+        return (_positive_int(meta.get("n_ctx")) or None) if isinstance(meta, Mapping) else None
+    root = _api_root(config)
+    if provider == "lmstudio":
+        try:
+            async with aiohttp.ClientSession(timeout=_timeout()) as session:
+                async with session.get(f"{root}/api/v0/models", headers=_headers(config)) as response:
+                    if response.status < 400:
+                        payload = await response.json()
+                        for item in payload.get("data", []) if isinstance(payload, Mapping) else []:
+                            if isinstance(item, Mapping) and item.get("id") == model:
+                                value = item.get("loaded_context_length") or item.get("max_context_length")
+                                return int(value) if value else None
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+            return None
+        return None
+    if provider == "ollama":
+        try:
+            async with aiohttp.ClientSession(timeout=_timeout()) as session:
+                async with session.post(f"{root}/api/show", headers=_headers(config), json={"model": model}) as response:
+                    if response.status < 400:
+                        payload = await response.json()
+                        info = payload.get("model_info") if isinstance(payload, Mapping) else {}
+                        for key, value in (info or {}).items():
+                            if key.endswith(".context_length"):
+                                return int(value)
+                        if isinstance(info, Mapping) and info.get("context_length"):
+                            return int(info["context_length"])
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+            return None
+        return None
+    return None
+
+
+_window_cache: dict[tuple[Any, str, str], tuple[float, int | None]] = {}
+
+
+async def _cached_context_window(config: Mapping[str, Any], model: str) -> int | None:
+    key = (config.get("provider"), _base_url(config), str(model or ""))
+    now = time.time()
+    ttl = _positive_int((config.get("limits") or {}).get("window_cache_ttl"))
+    cached = _window_cache.get(key)
+    if cached and (not ttl or now - cached[0] < ttl):
+        return cached[1]
+    try:
+        window = await context_window(config, model)
+    except Exception:
+        window = None
+    if window:
+        _window_cache[key] = (now, window)
+    return window
+
+
+async def resolved_max_tokens(config: Mapping[str, Any]) -> int | None:
+    """Output cap for a request: an explicit setting wins, otherwise half the context window.
+
+    Returns None when neither is known, so callers can omit the field and let the provider
+    apply its own default.
+    """
+    explicit = _positive_int(config.get("max_tokens"))
+    if explicit:
+        return explicit
+    context = config.get("context") or {}
+    window = _positive_int(context.get("window") if isinstance(context, Mapping) else 0)
+    if not window:
+        window = _positive_int(await _cached_context_window(config, str(config.get("model") or "")))
+    return window // 2 if window else None
+
+
+async def summarize(config: Mapping[str, Any], text: str) -> str:
+    text = (text or "").strip()
+    if not text:
+        return ""
+    max_tokens = await resolved_max_tokens(config)
+    if _is_anthropic(config):
+        max_tokens = max_tokens or ANTHROPIC_FALLBACK_MAX_TOKENS
+        body = {
+            "model": config.get("model"),
+            "system": SUMMARY_SYSTEM,
+            "messages": [{"role": "user", "content": text}],
+            "max_tokens": max_tokens,
+            "temperature": 0.3,
+        }
+        url = f"{_base_url(config)}/v1/messages"
+        async with aiohttp.ClientSession(timeout=_timeout()) as session:
+            async with session.post(url, headers=_headers(config), json=body) as response:
+                if response.status >= 400:
+                    raise RuntimeError(await _read_error(response, config))
+                payload = await response.json()
+        parts = [block.get("text", "") for block in payload.get("content", []) if block.get("type") == "text"]
+        return "".join(parts).strip()
+    body = {
+        "model": config.get("model"),
+        "messages": [
+            {"role": "system", "content": SUMMARY_SYSTEM},
+            {"role": "user", "content": text},
+        ],
+        "temperature": 0.3,
+        "stream": False,
+    }
+    if max_tokens:
+        body["max_tokens"] = max_tokens
+    url = f"{_base_url(config)}/chat/completions"
+    async with aiohttp.ClientSession(timeout=_timeout()) as session:
+        retried_context_budget = False
+        while True:
+            async with session.post(url, headers=_headers(config), json=body) as response:
+                if response.status >= 400:
+                    detail = await response.text()
+                    allowed = _context_overflow_retry_tokens(
+                        response.status, detail, _positive_int(body.get("max_tokens"))
+                    )
+                    if allowed and not retried_context_budget:
+                        body["max_tokens"] = allowed
+                        retried_context_budget = True
+                        _debug_log(
+                            "provider",
+                            "summary.context_budget_retry",
+                            requested=max_tokens,
+                            adjusted=allowed,
+                        )
+                        continue
+                    limit = _limit_chars(config, "error_detail_chars")
+                    if limit and limit > 0:
+                        detail = detail[:limit]
+                    raise RuntimeError(f"Provider returned HTTP {response.status}: {detail}")
+                payload = await response.json()
+                break
+    choices = payload.get("choices") or []
+    if not choices:
+        return ""
+    message = choices[0].get("message", {})
+    return str(message.get("content") or "").strip()
+
+
+_EMBED_HINTS = ("embed", "bge", "nomic", "mxbai", "minilm", "gte", "e5", "text-embedding")
+
+
+async def embedding_models(config: Mapping[str, Any]) -> list[str]:
+    """Return embedding-capable model ids for the configured provider."""
+    config = embedding_connection(config)
+    provider = config.get("provider")
+    root = _api_root(config)
+    if provider == "lmstudio":
+        try:
+            async with aiohttp.ClientSession(timeout=_timeout()) as session:
+                async with session.get(f"{root}/api/v0/models", headers=_headers(config)) as response:
+                    if response.status < 400:
+                        payload = await response.json()
+                        if isinstance(payload, Mapping):
+                            return [
+                                str(item.get("id"))
+                                for item in payload.get("data", [])
+                                if isinstance(item, Mapping) and str(item.get("type", "")).lower() == "embeddings"
+                            ]
+        except (aiohttp.ClientError, ValueError):
+            return []
+        return []
+    if provider == "anthropic":
+        return []
+    try:
+        models = await list_models(config)
+    except Exception:
+        return []
+    return [model for model in models if any(hint in model.lower() for hint in _EMBED_HINTS)]
+
+
+async def embedding_limits(config: Mapping[str, Any], model: str) -> tuple[int, int, str]:
+    """Resolve the embedding input budget: (max tokens, char budget, source).
+
+    Order: explicit ``limits.embed_max_tokens`` -> the model's reported context window ->
+    the configured fallback (512 tokens, the common RAG default). Never drops data; callers
+    split all content into embedding requests.
+    """
+    config = embedding_connection(config)
+    limits = config.get("limits") or {}
+    explicit = _positive_int(limits.get("embed_max_tokens"))
+    if explicit:
+        tokens, source = explicit, "manual"
+    else:
+        window = await _cached_context_window(config, model)
+        if window:
+            tokens, source = int(window), "model"
+        else:
+            tokens = _positive_int(limits.get("embed_fallback_tokens")) or 512
+            source = "fallback"
+    per_token = _positive_int(limits.get("embed_chars_per_token")) or 4
+    chars = max(1, int(tokens * per_token * 0.9))
+    return tokens, chars, source
+
+
+async def resolve_embedding_model(config: Mapping[str, Any], explicit: str = "") -> str:
+    """Pick an embedding model: the configured one, else an auto-detected candidate."""
+    config = embedding_connection(config)
+    model = str(explicit or config.get("embed_model") or "").strip()
+    if model:
+        return model
+    try:
+        candidates = await embedding_models(config)
+    except Exception:
+        return ""
+    if not candidates:
+        return ""
+    for candidate in candidates:
+        if "nomic" in candidate.lower():
+            return candidate
+    return candidates[0]
+
+
+def _embedding_vectors(payload: Any) -> list[list[float]]:
+    items = payload.get("data", []) if isinstance(payload, Mapping) else []
+    ordered = sorted(items, key=lambda item: item.get("index", 0) if isinstance(item, Mapping) else 0)
+    return [list(item.get("embedding", [])) for item in ordered if isinstance(item, Mapping)]
+
+
+async def _ollama_embed(session: aiohttp.ClientSession, config: Mapping[str, Any], texts: list[str], model: str) -> list[list[float]]:
+    url = f"{_api_root(config)}/api/embed"
+    async with session.post(url, headers=_headers(config), json={"model": model, "input": texts, "truncate": False}) as response:
+        if response.status >= 400:
+            raise RuntimeError(await _read_error(response, config))
+        payload = await response.json()
+    return [list(vector) for vector in (payload.get("embeddings", []) if isinstance(payload, Mapping) else [])]
+
+
+async def _embed_request(config: Mapping[str, Any], texts: list[str], model: str = "") -> list[list[float]]:
+    texts = [text for text in texts if text and text.strip()]
+    if not texts:
+        return []
+    model = str(model or config.get("embed_model") or "").strip()
+    url = f"{_base_url(config)}/embeddings"
+    body = {"model": model, "input": texts}
+    async with aiohttp.ClientSession(timeout=_timeout()) as session:
+        async with session.post(url, headers=_headers(config), json=body) as response:
+            if response.status >= 400:
+                if config.get("provider") == "ollama":
+                    return await _ollama_embed(session, config, texts, model)
+                if config.get("provider") == "strata" and response.status == 404:
+                    raise RuntimeError(
+                        "Strata server does not expose the OpenAI-compatible embedding endpoint "
+                        "(/v1/embeddings). Use another embedding backend or keyword search; "
+                        "Strata chat remains available."
+                    )
+                raise RuntimeError(await _read_error(response, config))
+            payload = await response.json()
+    vectors = _embedding_vectors(payload)
+    if not vectors and config.get("provider") == "ollama":
+        async with aiohttp.ClientSession(timeout=_timeout()) as session:
+            return await _ollama_embed(session, config, texts, model)
+    return vectors
+
+
+async def _embed_impl(config: Mapping[str, Any], texts: list[str], model: str = "") -> list[list[float]]:
+    """Embed every input in full; pool fragments for single-vector consumers."""
+    config = embedding_connection(config)
+    import numpy as np
+
+    texts = [text for text in texts if text and text.strip()]
+    if not texts:
+        return []
+    model = str(model or config.get("embed_model") or "").strip()
+    tokens, _chars, _source = await embedding_limits(config, model)
+    groups = [[part for part in embedding_parts(text, tokens) if part.strip()] for text in texts]
+    # Preserve the existing efficient batch path for inputs that already fit.
+    if all(len(parts) == 1 for parts in groups):
+        vectors = await _embed_request(config, [parts[0] for parts in groups], model)
+        if len(vectors) != len(texts) or any(not vector for vector in vectors):
+            raise ValueError("Embedding provider returned an incomplete batch.")
+        return vectors
+    results = []
+    for parts in groups:
+        total = None
+        weight = 0
+        for part in parts:
+            vectors = await _embed_request(config, [part], model)
+            if len(vectors) != 1 or not vectors[0]:
+                raise ValueError("Embedding provider returned an incomplete fragment.")
+            vector = np.asarray(vectors[0], dtype="float64")
+            if vector.ndim != 1 or not np.isfinite(vector).all():
+                raise ValueError("Embedding provider returned an invalid vector.")
+            vector /= np.linalg.norm(vector) + 1e-9
+            if total is not None and total.shape != vector.shape:
+                raise ValueError("Embedding provider returned inconsistent dimensions.")
+            size = len(part.encode("utf-8"))
+            total = vector * size if total is None else total + vector * size
+            weight += size
+        results.append((total / weight).tolist())
+    return results
+
+
+async def embed(config: Mapping[str, Any], texts: list[str], model: str = "") -> list[list[float]]:
+    config = embedding_connection(config)
+    model = str(model or config.get("embed_model") or "").strip()
+    if not model or not any(text and text.strip() for text in texts):
+        return await _embed_impl(config, texts, model)
+    key = _connection_identity(config, model)
+    await _acquire_model_activity(key, config, model)
+    try:
+        vectors = await _embed_impl(config, texts, model)
+    except BaseException:
+        await _release_model_activity(key, config, model, True)
+        raise
+    else:
+        await _release_model_activity(key, config, model, True)
+        return vectors
+
+
+async def unload_models(config: Mapping[str, Any]) -> dict[str, Any]:
+    provider = config.get("provider")
+    root = _api_root(config)
+    unloaded: list[str] = []
+    if provider == "lmstudio":
+        url = f"{root}/api/v1/models"
+        async with aiohttp.ClientSession(timeout=_timeout()) as session:
+            async with session.get(url, headers=_headers(config)) as response:
+                if response.status == 404:
+                    return {"unsupported": True, "unloaded": [], "reason": "LM Studio v1 API is not available (needs 0.4.0+)."}
+                if response.status >= 400:
+                    raise RuntimeError(await _read_error(response, config))
+                payload = await response.json()
+            models = payload.get("models", []) if isinstance(payload, Mapping) else []
+            for model in models:
+                if not isinstance(model, Mapping):
+                    continue
+                for instance in model.get("loaded_instances") or []:
+                    instance_id = str(instance.get("id") or "").strip() if isinstance(instance, Mapping) else ""
+                    if not instance_id:
+                        continue
+                    async with session.post(
+                        f"{root}/api/v1/models/unload",
+                        headers=_headers(config),
+                        json={"instance_id": instance_id},
+                    ) as unload_response:
+                        if unload_response.status < 400:
+                            unloaded.append(instance_id)
+        return {"unsupported": False, "unloaded": unloaded}
+    if provider == "ollama":
+        url = f"{root}/api/ps"
+        async with aiohttp.ClientSession(timeout=_timeout()) as session:
+            async with session.get(url, headers=_headers(config)) as response:
+                if response.status >= 400:
+                    raise RuntimeError(await _read_error(response, config))
+                payload = await response.json()
+            models = payload.get("models", []) if isinstance(payload, Mapping) else []
+            for model in models:
+                name = str(model.get("name") or model.get("model") or "").strip() if isinstance(model, Mapping) else ""
+                if not name:
+                    continue
+                async with session.post(
+                    f"{root}/api/generate",
+                    headers=_headers(config),
+                    json={"model": name, "keep_alive": 0},
+                ) as unload_response:
+                    if unload_response.status < 400:
+                        unloaded.append(name)
+        return {"unsupported": False, "unloaded": unloaded}
+    return {"unsupported": True, "unloaded": [], "reason": f"Provider '{provider}' has nothing to unload."}
+
+
+async def unload_embedding_model(config: Mapping[str, Any], model: str) -> dict[str, Any]:
+    """Unload only the selected embedding model; never unload a provider's full model set."""
+    config = embedding_connection(config)
+    provider = config.get("provider")
+    root = _api_root(config)
+    model = str(model or "").strip()
+    if not model:
+        return {"unsupported": True, "unloaded": [], "reason": "No embedding model is selected."}
+    unloaded: list[str] = []
+    if provider == "lmstudio":
+        async with aiohttp.ClientSession(timeout=_timeout()) as session:
+            async with session.get(f"{root}/api/v1/models", headers=_headers(config)) as response:
+                if response.status == 404:
+                    return {"unsupported": True, "unloaded": [], "reason": "LM Studio v1 API is unavailable."}
+                if response.status >= 400:
+                    raise RuntimeError(await _read_error(response, config))
+                payload = await response.json()
+            for item in payload.get("models", []) if isinstance(payload, Mapping) else []:
+                if not isinstance(item, Mapping):
+                    continue
+                model_id = str(item.get("key") or item.get("id") or item.get("model") or item.get("name") or "").strip()
+                if model_id != model:
+                    continue
+                for instance in item.get("loaded_instances") or []:
+                    instance_id = str(instance.get("id") or instance.get("instance_id") or "").strip() if isinstance(instance, Mapping) else ""
+                    if not instance_id:
+                        continue
+                    async with session.post(
+                        f"{root}/api/v1/models/unload", headers=_headers(config), json={"instance_id": instance_id}
+                    ) as response:
+                        if response.status < 400:
+                            unloaded.append(instance_id)
+        return {"unsupported": False, "unloaded": unloaded}
+    if provider == "ollama":
+        async with aiohttp.ClientSession(timeout=_timeout()) as session:
+            async with session.get(f"{root}/api/ps", headers=_headers(config)) as response:
+                if response.status >= 400:
+                    raise RuntimeError(await _read_error(response, config))
+                payload = await response.json()
+            loaded = [
+                str(item.get("name") or item.get("model") or "").strip()
+                for item in (payload.get("models", []) if isinstance(payload, Mapping) else [])
+                if isinstance(item, Mapping)
+            ]
+            if model not in loaded:
+                return {"unsupported": False, "unloaded": []}
+            async with session.post(
+                f"{root}/api/generate", headers=_headers(config), json={"model": model, "keep_alive": 0}
+            ) as response:
+                if response.status >= 400:
+                    raise RuntimeError(await _read_error(response, config))
+                await response.read()
+        return {"unsupported": False, "unloaded": [model]}
+    return {"unsupported": True, "unloaded": [], "reason": f"Provider '{provider}' does not support model-specific unload."}
