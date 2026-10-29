@@ -219,6 +219,7 @@ fun_colors.py
 .vscode
 *.pth
 
+tests/notes.md
 chatbot_config.json
 chatbot_history.json
 kb_cache/
