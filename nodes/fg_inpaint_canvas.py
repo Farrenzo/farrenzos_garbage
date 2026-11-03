@@ -1247,7 +1247,7 @@ def _register_routes():
 _register_routes()
 
 
-NODE_CLASS_MAPPINGS = {
+INPAINT_CANVAS_NODE_CLASS_MAPPINGS = {
     "InpaintCanvas": InpaintCanvas,
     "InpaintCanvasStitch": InpaintCanvasStitch,
     "InpaintCanvasLoadRef": InpaintCanvasLoadRef,
@@ -1256,11 +1256,11 @@ NODE_CLASS_MAPPINGS = {
     "InpaintCanvasTextOut": InpaintCanvasTextOut,
 }
 
-NODE_DISPLAY_NAME_MAPPINGS = {
-    "InpaintCanvas": "Inpaint Canvas",
-    "InpaintCanvasStitch": "Inpaint Canvas Stitch",
-    "InpaintCanvasLoadRef": "Inpaint Canvas Load Ref",
-    "InpaintCanvasMaskOut": "Inpaint Canvas Mask Out",
-    "InpaintCanvasObjectMap": "Inpaint Canvas Object Map",
-    "InpaintCanvasTextOut": "Inpaint Canvas Text Out",
+INPAINT_CANVAS_NODE_DISPLAY_NAME_MAPPINGS = {
+    "InpaintCanvas"         : "🎨 Inpaint Canvas",
+    "InpaintCanvasStitch"   : "🎨 Inpaint Canvas Stitch",
+    "InpaintCanvasLoadRef"  : "🎨 Inpaint Canvas Load Ref",
+    "InpaintCanvasMaskOut"  : "🎨 Inpaint Canvas Mask Out",
+    "InpaintCanvasObjectMap": "🎨 Inpaint Canvas Object Map",
+    "InpaintCanvasTextOut"  : "🎨 Inpaint Canvas Text Out",
 }

@@ -19,6 +19,7 @@ app.registerExtension({
             "FG_CannyDetect",
             "FG_CLIPTextEncode",
             "FG_CombinedImageTagger",
+            "FG_ConditioningKrea2Rebalance",
             "FG_CropFactorPadding",
             "FG_CustomVAELoader",
             "FG_DynamicLoraLoader",
@@ -26,6 +27,7 @@ app.registerExtension({
             "FG_ImageScaler",
             "FG_IntFloatOut",
             "FG_KSampler",
+            "FG_Krea2EditModelPatch",
             "FG_LABColorTransfer",
             "FG_LatentTransfer",
             "FG_LineworkComposite",
@@ -61,9 +63,9 @@ app.registerExtension({
             "AnimaIPAdapterVisualize",
             "MultiLatentComposite",
             "MultiAreaConditioning",
+            "ConditioningDebug",
             "ConditioningUpscale",
             "ConditioningStretch",
-            "ConditioningKrea2Rebalance",
 
             "SCAIL2EasyConfig",
             "SCAIL2AutoVideo",
@@ -90,6 +92,13 @@ app.registerExtension({
             "FG_ColorPicker",
             "FG_ColorMap",
             "FG_SeedVarianceEnhancer",
+
+            "InpaintCanvas",
+            "InpaintCanvasStitch",
+            "InpaintCanvasLoadRef",
+            "InpaintCanvasMaskOut",
+            "InpaintCanvasObjectMap",
+            "InpaintCanvasTextOut",
         ];
         if (!garbage_nodes.includes(node.comfyClass)) {
             return;
@@ -98,4 +107,3 @@ app.registerExtension({
         node.bgcolor = "#0c161bd8";
     },
 });
-

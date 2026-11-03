@@ -15,7 +15,13 @@ Many SDXL models will use a negative prompt. However, newer
 models appear to have better (not perfect) prompt adherence.
 Hence a negative prompt is not always required.
 """
-global_instruction_content = "Describe the key features of the input image (color, shape, size, texture, objects, background), then explain how the user's text instruction should alter or modify the image. Generate a new image that meets the user's requirements while maintaining consistency with the original input where appropriate."
+global_instruction_content = (
+    "Describe the key features of the input image (color, shape, "
+    "size, texture, objects, background), then explain how the "
+    "user's text instruction should alter or modify the image."
+    "Generate a new image that meets the user's requirements while"
+    "maintaining consistency with the original input where appropriate."
+)
 
 
 class FG_CLIPTextEncode(ComfyNodeABC):
@@ -53,6 +59,20 @@ class FG_CLIPTextEncode(ComfyNodeABC):
                         "tooltip": "📝 System instructions used to guide the editing of reference images."
                     }
                 ),
+                "vl_image_px_cap": (
+                    IO.INT, {
+                        "default": -1,
+                        "min": -1,
+                        "max": 4096,
+                        "step": 1, # step=1 so the frontend doesn't snap values relative to min=-1 (63, 127, ...)
+                        "tooltip": (
+                            "📐 Max size of the reference images fed to the vision-language encoder (VAE path is unaffected).\n"
+                            "-1 = Qwen-Image-Edit default (rescale to ~384x384 area). Leave this for most workflows.\n"
+                            " 0 = Native resolution (no resize; more vision tokens, more VRAM).\n"
+                            " N = Cap the longest side at N px, never upscales. Best used for Krea edit (e.g. 768)."
+                        )
+                    }
+                ),
             }
         }
 
@@ -76,9 +96,25 @@ class FG_CLIPTextEncode(ComfyNodeABC):
         negative_prompt="",
         vl_based_clip = False,
         prompt_option = False,
-        vl_instruction = global_instruction_content # Vision Language Instructions for the CLIP.
+        vl_instruction = global_instruction_content, # Vision Language Instructions for the CLIP.
+        vl_image_px_cap = -1 # -1 = 384² area (Qwen-Image-Edit), 0 = native, N = cap longest side.
     ):
         vl_based_clip = vl_based_clip
+
+        def _resize_for_vl(samples):
+            """samples: B,C,H,W -> B,H,W,3 sized for the vision-language encoder."""
+            h, w = samples.shape[2], samples.shape[3]
+            if vl_image_px_cap < 0:
+                # Qwen-Image-Edit convention: normalize area to 384x384, keeps aspect ratio (can upscale).
+                scale_by = math.sqrt((384 * 384) / (w * h))
+                samples = comfy.utils.common_upscale(samples, round(w * scale_by), round(h * scale_by), "area", "disabled")
+            elif vl_image_px_cap > 0 and max(h, w) > vl_image_px_cap:
+                # Krea-style cap: shrink so the longest side == cap, never upscale.
+                scale_by = vl_image_px_cap / max(h, w)
+                samples = comfy.utils.common_upscale(samples, round(w * scale_by), round(h * scale_by), "area", "disabled")
+            # vl_image_px_cap == 0: native resolution, no resize.
+            return samples.movedim(1, -1)[:, :, :, :3] # Drop alpha if present.
+
         def _advanced_encode(prompt):
             images = [image1, image2, image3]
             images_vl   = [] # The scaled down images will be popped in here if any are provided.
@@ -90,12 +126,7 @@ class FG_CLIPTextEncode(ComfyNodeABC):
                 if image is not None:
                     image_prompt += f"Picture {i + 1}: <|vision_start|><|image_pad|><|vision_end|>\n"
                     samples = image.movedim(-1, 1)
-                    total = int(384 * 384)
-                    scale_by = math.sqrt(total / (samples.shape[3] * samples.shape[2]))
-                    width = round(samples.shape[3] * scale_by)
-                    height = round(samples.shape[2] * scale_by)
-                    s = comfy.utils.common_upscale(samples, width, height, "area", "disabled")
-                    images_vl.append(s.movedim(1, -1))
+                    images_vl.append(_resize_for_vl(samples))
 
                     if vae is not None:
                         # Keep original resolution, just round to nearest multiple of 8
@@ -135,4 +166,3 @@ class FG_CLIPTextEncode(ComfyNodeABC):
             negative_conditioning = _advanced_encode(negative_prompt)
 
         return (positive_conditioning, negative_conditioning, positive_prompt, negative_prompt, )
-

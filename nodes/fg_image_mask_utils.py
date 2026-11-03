@@ -626,3 +626,18 @@ class FG_AutoCropnClipReStitcher:
         x0, x1 = max(left, 0), min(left + cw, img_w)
         out[:, y0:y1, x0:x1, :3] = merged[:, y0 - top:y1 - top, x0 - left:x1 - left, :]
         return (out,)
+
+
+MASK_UTILS_NODE_CLASS_MAPPINGS = {
+    "FG_MaskBackdrop"            : FG_MaskBackdrop,
+    "FG_BoxFillwCoordinates"     : FG_CoordinatesBoxFill,
+
+    "FG_AutoCropnClip"           : FG_AutoCropnClip,
+    "FG_AutoCropnClipReStitcher" : FG_AutoCropnClipReStitcher,
+}
+MASK_UTILS_NODE_DISPLAY_NAME_MAPPINGS = {
+    "FG_MaskBackdrop"           : "⚙️ Mask Backdrop",
+    "FG_BoxFillwCoordinates"    : "🗑️ Coordinate Box Fill",
+    "FG_AutoCropnClip"          : "✂️ Auto Crop & Clip",
+    "FG_AutoCropnClipReStitcher": "🪡 Auto Crop & Clip ReStitcher",
+}

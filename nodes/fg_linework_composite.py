@@ -794,6 +794,9 @@ class FG_ColorMap:
         return (cmap, info)
 
 
+## WHAT THE FUCK WAS I DOING HERE???
+## I THINK I WAS TRYING TO GET BBOX 
+## TO WORK NATIVELY IN THE NODE... BUT WHY??
 
 SEG = namedtuple(
     "SEG",
@@ -901,3 +904,16 @@ class ONNXDetectorProvider:
         return (ONNXDetector(model), )
 
 
+##################################
+LINEWORK_NODE_CLASS_MAPPINGS = {
+    "FG_ColorMap"         : FG_ColorMap,
+    "FG_BubbleTint"       : FG_BubbleTint,
+    "FG_ColorPicker"      : FG_ColorPicker,
+    "FG_LineworkComposite": FG_LineworkComposite,
+}
+LINEWORK_DISPLAY_NAME_MAPPINGS = {
+    "FG_ColorPicker"      : "🗑️ Color Picker",
+    "FG_LineworkComposite": "🗑️ Linework Composite",
+    "FG_ColorMap"         : "🗑️ Color Map (for Bubble Tint)",
+    "FG_BubbleTint"       : "🗑️ Bubble Tint (colour lettering)",
+}

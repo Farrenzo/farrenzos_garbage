@@ -153,3 +153,13 @@ class FG_AnySwitch:
         return (switch,) + tuple(kwargs.get(f"{prefix}{i}") for i in range(MAX_PAIRS))
 
 
+MATH_UTILS_NODE_CLASS_MAPPINGS = {
+    "FG_AnySwitch"      : FG_AnySwitch,
+    "FG_IntFloatOut"    : FG_IntFloatOut,
+    "FG_Minimum_Maximum": FG_MinimumMaximum,
+}
+MATH_UTILS_NODE_DISPLAY_NAME_MAPPINGS = {
+    "FG_AnySwitch"      : "🗑️ Any Switcher",
+    "FG_IntFloatOut"    : "🗑️ Int / Float Out",
+    "FG_Minimum_Maximum": "🗑️ Minimum + Maximum",
+}

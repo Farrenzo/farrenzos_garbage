@@ -66,6 +66,10 @@
 			"vl_instruction" :{
 				"name": "✏️ Visual Learning Instructions",
 				"tooltip": "✏️ System instructions used to guide the editing of reference images."
+			},
+			"vl_image_px_cap" :{
+				"name": "📐 Max Image Size to VL",
+				"tooltip": "📐 Max size of the reference images fed to the vision-language encoder (VAE path is unaffected).\n-1 = Qwen-Image-Edit default (rescale to ~384x384 area). Leave this for most workflows.\n0 = Native resolution (no resize; more vision tokens, more VRAM).\nN = Cap the longest side at N px, never upscales. Best used for Krea edit (e.g. 768)."
 			}
 		},
 		"outputs": {
@@ -290,5 +294,128 @@
 				"tooltip": "🏞️ Latent - Generated latent space output."
 			}
 		}
+	},
+	"FG_AutoCropnClip":{
+		"display_name": "✂️ Auto Crop & Clip",
+		"description":"Crop a predetermined rectangle or square around your masked image region.",
+		"inputs":{
+			"image":{
+				"name":"🖼️ Image",
+				"tooltip": "The Image to process."
+			},
+			"mask":{
+				"name":"👺 Mask",
+				"tooltip":"The Image to process."
+			}
+		},
+		"outputs":{
+			"0":{
+				"name":"🪡 Stitcher",
+				"tooltip": "Instruction set for the accompanying stitcher node."
+			},
+			"1":{
+				"name":"🖼️ Image",
+				"tooltip": "The cropped image."
+			},
+			"2":{
+				"name":"👺 Mask",
+				"tooltip": "The cropped mask."
+			}
+		}
+	},
+    "FG_AutoCropnClipReStitcher": {
+		"display_name": "🪡 Auto Crop & Clip ReStitcher",
+		"description":"",
+		"inputs":{
+			"stitcher":{
+				"name":"🪡 Stitcher",
+				"tooltip": "Instruction set from the crop node."
+			},
+			"processed_image":{
+				"name":"🖼️ Image",
+				"tooltip": "The processed image."
+			},
+			"color_match":{
+				"name":"🎨 Match Color?",
+				"tooltip": "Shift the processed crop's colour to match the original, measured on the context pixels outside the blend. Counters VAE colour drift."
+			}
+		},
+		"outputs":{
+			"0":{
+				"name":"🖼️ Image",
+				"tooltip": "The stitched image."
+			}
+		}
+	},
+    "FG_LoadImage": {
+		"display_name": "🗑️ Load Image",
+		"description":"Load an image from anywhere. Ctrl+V an image copied from anywhere.",
+		"inputs":{
+			"crop_width":{
+				"name":"📐 Width",
+				"tooltip": "The crop width."
+			},
+			"crop_height":{
+				"name":"📏 Height",
+				"tooltip": "The crop height."
+			},
+			"crop_shape":{
+				"name":"🪚 Crop Shape",
+				"tooltip": "polygon: drag to lasso, or click points and click the first one (or double-click) to close. The image is cropped to the polygon's bounding box (or the typed size) and everything outside the polygon is whited out. polygon-transparent also outputs RGBA with it at alpha 0, for models that take transparency; nodes that drop the alpha still see white."
+			}
+		},
+		"outputs":{
+			"0":{
+				"name":"🖼️ Image",
+				"tooltip": "The image after crop processing."
+			},
+			"1":{
+				"name":"👺 Mask",
+				"tooltip": "The mask after crop processing."
+			},
+			"2":{
+				"name":"📐 Width",
+				"tooltip": "The image width."
+			},
+			"3":{
+				"name":"📏 Height",
+				"tooltip": "The image height."
+			}
+		}
+	},
+	"FG_SaveImage": {
+		"display_name": "🗑️ Save Image",
+		"description":"Save a pre-processed image.",
+		"inputs":{
+			"image":{
+				"name":"🖼️ Image",
+				"tooltip": "The Image or Images to save."
+			},
+			"filename_prefix":{
+				"name":"✏️ Pre-fix",
+				"tooltip": "The prefix for the file to save. Supports %HMSf% for timestamp."
+			},
+			"format":{
+				"name":"🗂️ File Format",
+				"tooltip": "Image format: PNG (lossless, larger) or WebP (configurable compression)."
+			},
+			"embed_metadata":{
+				"name":"🪪 Embed Metadata",
+				"tooltip": "Embed ComfyUI workflow and generation metadata in the image."
+			},
+			"webp_lossless":{
+				"name":"💥 WebP Lossless",
+				"tooltip": "For WebP only: Use lossless compression. If False, uses lossy compression controlled by quality."
+			},
+			"webp_quality":{
+				"name":"🥔 WebP Quality",
+				"tooltip": "WebP only: Quality for lossy compression (1-100). Ignored if lossless=True."
+			},
+			"webp_method":{
+				"name":"🈷️ WebP Mthod",
+				"tooltip": "WebP only: Compression method (0=fast, 6=slowest/best). 'default' uses PIL's default."
+			}
+		},
+		"outputs":{}
 	}
 }

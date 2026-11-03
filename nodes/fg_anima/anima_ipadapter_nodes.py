@@ -834,3 +834,18 @@ class AnimaIPAdapterVisualize:
               f"key_unique={key_unique_map.mean().item():.4f}")
 
         return (result,)
+
+
+ANIMA_IP_ADAPTER_NODE_CLASS_MAPPINGS = {
+    "AnimaIPAdapterLoader":    AnimaIPAdapterLoader,
+    "AnimaIPAdapterApply":     AnimaIPAdapterApply,
+    "AnimaSiglipeEncodeImage": AnimaSiglipeEncodeImage,
+    "AnimaIPAdapterVisualize": AnimaIPAdapterVisualize,
+}
+
+ANIMA_IP_ADAPTER_DISPLAY_NAME_MAPPINGS = {
+    "AnimaIPAdapterApply"    : "🗑️ Anima IP-Adapter Apply",
+    "AnimaIPAdapterLoader"   : "🗑️ Anima IP-Adapter Loader",
+    "AnimaIPAdapterVisualize": "🗑️ Anima IP Adapter Visualizer",
+    "AnimaSiglipeEncodeImage": "🗑️ Anima SigLIP2 Encode Image",
+}

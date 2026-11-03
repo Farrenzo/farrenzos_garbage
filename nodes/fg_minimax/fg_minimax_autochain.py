@@ -919,3 +919,21 @@ class MiniMaxH3AutoChainFrameReference:
         return (torch.from_numpy(pixels).unsqueeze(0),)
 
 
+AUTOCHAIN_NODE_CLASS_MAPPINGS = {
+    "MiniMaxH3AutoChainMotionContext":     MiniMaxH3AutoChainMotionContext,
+    "MiniMaxH3AutoChainMotionContextTrim": MiniMaxH3AutoChainMotionContextTrim,
+    "MiniMaxH3AutoChainSaveLatent":        MiniMaxH3AutoChainSaveLatent,
+    "MiniMaxH3AutoChainLoadLatent":        MiniMaxH3AutoChainLoadLatent,
+    "MiniMaxH3AutoChainAudio":             MiniMaxH3AutoChainAudio,
+    "MiniMaxH3AutoChain":                  MiniMaxH3AutoChain,
+    "MiniMaxH3AutoChainFrameReference":    MiniMaxH3AutoChainFrameReference,
+}
+AUTOCHAIN_DISPLAY_NAME_MAPPINGS = {
+    "MiniMaxH3AutoChainMotionContext":     "⚙️ H3 Auto Chain Motion Context",
+    "MiniMaxH3AutoChainMotionContextTrim": "⚙️ H3 Auto Chain Motion Context Trim",
+    "MiniMaxH3AutoChainSaveLatent":        "⚙️ H3 Auto Chain Save Latent",
+    "MiniMaxH3AutoChainLoadLatent":        "⚙️ H3 Auto Chain Load Latent",
+    "MiniMaxH3AutoChainAudio":             "⚙️ H3 Auto Chain Audio",
+    "MiniMaxH3AutoChain":                  "⚙️ H3 Auto Chain + Stitch",
+    "MiniMaxH3AutoChainFrameReference":    "⚙️ H3 Auto Chain Frame Reference",
+}

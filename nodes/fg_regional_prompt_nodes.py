@@ -231,3 +231,19 @@ class MultiLatentComposite:
 
         samples_out["samples"] = s
         return (samples_out,)
+
+
+REGIONAL_PROMPT_NODE_CLASS_MAPPINGS = {
+    "ConditioningDebug": ConditioningDebug,
+    "ConditioningUpscale":   ConditioningUpscale,
+    "ConditioningStretch":   ConditioningStretch,
+    "MultiLatentComposite":  MultiLatentComposite,
+    "MultiAreaConditioning": MultiAreaConditioning,
+}
+REGIONAL_PROMPT_DISPLAY_NAME_MAPPINGS = {
+    "ConditioningDebug":     "⚙️ Conditioning Debug",
+    "ConditioningUpscale":   "⚙️ Conditioning Upscale",
+    "ConditioningStretch":   "⚙️ Conditioning Stretch",
+    "MultiLatentComposite":  "⚙️ Multi Latent Composite",
+    "MultiAreaConditioning": "⚙️ Multi Area Conditioning",
+}

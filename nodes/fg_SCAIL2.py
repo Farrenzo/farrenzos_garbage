@@ -784,3 +784,15 @@ class SCAIL2RunInfo:
                 info["steps"], info["cfg"], info["positive"], info["negative"], info["replace_mode"],
                 info["object_indices"], info["driving_video"], info["reference_image"], path, "; ".join(msg))
 
+
+
+SCAIL2_NODE_CLASS_MAPPINGS = {
+    "SCAIL2EasyConfig" : SCAIL2EasyConfig,
+    "SCAIL2AutoVideo"  : SCAIL2AutoVideo,
+    "SCAIL2RunInfo"    : SCAIL2RunInfo,
+}
+SCAIL2_DISPLAY_NAME_MAPPINGS = {
+    "SCAIL2EasyConfig": "⚙️ SCAIL-2 Easy Config",
+    "SCAIL2AutoVideo":  "⚙️ SCAIL-2 Auto Video (loop)",
+    "SCAIL2RunInfo":    "⚙️ SCAIL-2 Run Info",
+}
