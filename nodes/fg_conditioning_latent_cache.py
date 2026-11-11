@@ -149,8 +149,7 @@ class FG_LoadConditioningLatent:
         path = os.path.join(_cache_root(), f"{filename}.pt")
         if not os.path.exists(path):
             raise FileNotFoundError(
-                f"[FG_LoadConditioningLatent] No cached file at {path}. "
-                f"Run FG_SaveConditioningLatent first."
+                f"{self.NODE_NAME}: No cached file at {path}. Run FG_SaveConditioningLatent first."
             )
 
         # weights_only=False is required: conditioning metadata dicts can
@@ -162,3 +161,11 @@ class FG_LoadConditioningLatent:
         return (payload["positive_conditioning"], payload["negative_conditioning"], payload["latent"])
 
 
+CACHE_NODE_CLASS_MAPPINGS = {
+    "FG_SaveConditioningLatent": FG_SaveConditioningLatent,
+    "FG_LoadConditioningLatent": FG_LoadConditioningLatent,
+}
+CACHE_NODE_DISPLAY_NAME_MAPPINGS = {
+    "FG_SaveConditioningLatent": "🗑️ Save Conditioning / Latent To Disk",
+    "FG_LoadConditioningLatent": "🗑️ Load Conditioning / Latent From Disk",
+}

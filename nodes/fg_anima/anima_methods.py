@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from typing import Optional
 from functools import partial
 from dataclasses import dataclass
+from typing import Optional, Any, Callable
 
 import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+import comfy.conds
+from comfy.ldm.modules.attention import AttentionTensorContainer
 
 WRAPPER_KEY = "comfyui_anima_regional_conditioning"
 
@@ -282,6 +285,7 @@ def _masked_attn_op(
     v: torch.Tensor,
     transformer_options: Optional[dict] = None,
     attn_bias: Optional[torch.Tensor] = None,
+    preferred_attention=None,  # unused, but predict2's compute_attention always passes it
 ) -> torch.Tensor:
     """
     Drop-in replacement for torch_attention_op that injects a spatial attention
@@ -295,6 +299,8 @@ def _masked_attn_op(
 
     Output: [B, S_q, n_heads * head_dim]
     """
+    if isinstance(q, AttentionTensorContainer):
+        q, k, v = q.take(), k.take(), v.take()
     B, Sq, H, D = q.shape
 
     # [B, S, H, D] → [B, H, S, D] for SDPA
@@ -961,3 +967,97 @@ class IPAdapterSigLIP(nn.Module):
         ip_out = self.ip_cross_attns[block_idx](query, image_tokens)
         scale = scale_override if scale_override is not None else self.ip_scales[block_idx]
         return scale * ip_out
+
+COND_REF_LATENTS_KEY = "ref_latents"
+def cosmos_extra_conds_reference(
+    extra_conds: Callable[..., dict],
+    process_latent_in: Callable[..., torch.Tensor],
+    ref_latents: dict[str, dict[str, Any]] | None = None,
+):
+    def _anima_extra_conds_reference(**kwargs):
+        out = extra_conds(**kwargs)
+        if ref_latents is not None:
+            latents = [process_latent_in(l["samples"]) for l in ref_latents.values()]
+            out[COND_REF_LATENTS_KEY] = comfy.conds.CONDList(latents)
+
+        return out
+
+    return _anima_extra_conds_reference
+
+
+def cosmos_diffusion_reference_wrapper(executor, *args, **kwargs):
+    x: torch.Tensor = args[0]
+    x_temporal_dim = x.shape[2]
+    ref_latents: torch.Tensor | None = kwargs.get(COND_REF_LATENTS_KEY)
+
+    newargs = list(args)
+
+    if ref_latents is not None:
+        for ref in ref_latents:
+            if ref.ndim == 4:
+                ref = ref.unsqueeze(2)
+            x = torch.cat([x, ref.to(dtype=x.dtype, device=x.device)], dim=2)
+
+    newargs[0] = x
+
+    result = executor(*newargs, **kwargs)[:, :, :x_temporal_dim]
+
+    return result
+
+# ─── runtime firing counters ──────────────────────────────────────────
+
+_STATS = {"fired": 0, "bypassed": 0, "delta": 0.0, "base": 0.0, "n": 0}
+
+
+def install_lllite_counters(enable=True):
+    """Wrap LLLiteModuleDiT.forward to record fired/bypassed and delta magnitude.
+
+    Call once at import time from your pack's __init__. Costs two norms per
+    module per step, so leave it off for production runs.
+    """
+    from .fg_anima_controlnet import LLLiteModuleDiT
+
+    if getattr(LLLiteModuleDiT, "_fg_counted", False) or not enable:
+        return
+    original = LLLiteModuleDiT.forward
+
+    def counted(self, x, *a, **kw):
+        before = x
+        out = original(self, x, *a, **kw)
+        if out.shape == before.shape:
+            d = (out - before)
+            if float(d.abs().max()) < 1e-9:
+                _STATS["bypassed"] += 1
+            else:
+                _STATS["fired"] += 1
+                _STATS["delta"] += float(d.norm())
+                _STATS["base"] += float(before.norm())
+                _STATS["n"] += 1
+        else:
+            _STATS["bypassed"] += 1
+        return out
+
+    LLLiteModuleDiT.forward = counted
+    LLLiteModuleDiT._fg_counted = True
+    print("[FG] LLLite firing counters installed.")
+
+
+def report_lllite_stats(reset=True):
+    s = _STATS
+    total = s["fired"] + s["bypassed"]
+    if total == 0:
+        print("[FG LLLite] no modules were called at all — the wrapper never ran.")
+    else:
+        ratio = (s["delta"] / s["base"]) if s["base"] else 0.0
+        print(f"[FG LLLite] fired {s['fired']}/{total} "
+              f"({100 * s['fired'] / total:.0f}%), bypassed {s['bypassed']}. "
+              f"mean |delta|/|x| = {ratio:.4f}")
+        if s["fired"] == 0:
+            print("            Every module bypassed. Token-count mismatch — "
+                  "run FG_LLLiteCondPreview to see the numbers.")
+        elif ratio < 0.01:
+            print("            Modules fired but the injected delta is under 1% of "
+                  "the activations. Raise strength.")
+    if reset:
+        _STATS.update(fired=0, bypassed=0, delta=0.0, base=0.0, n=0)
+

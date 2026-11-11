@@ -387,8 +387,8 @@
 		"display_name": "🗑️ Save Image",
 		"description":"Save a pre-processed image.",
 		"inputs":{
-			"image":{
-				"name":"🖼️ Image",
+			"images":{
+				"name":"🖼️ Images",
 				"tooltip": "The Image or Images to save."
 			},
 			"filename_prefix":{
@@ -412,7 +412,7 @@
 				"tooltip": "WebP only: Quality for lossy compression (1-100). Ignored if lossless=True."
 			},
 			"webp_method":{
-				"name":"🈷️ WebP Mthod",
+				"name":"🈷️ WebP Method",
 				"tooltip": "WebP only: Compression method (0=fast, 6=slowest/best). 'default' uses PIL's default."
 			}
 		},

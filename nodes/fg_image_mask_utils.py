@@ -322,6 +322,78 @@ class FG_MaskBackdrop:
         return (torch.cat(out_chunks).contiguous(), torch.cat(mask_chunks).contiguous(),)
 
 
+class FG_CropFactorPadding:
+    """Turns a mask into a padding value (pixels) so the crop around the mask
+    scales with the mask size, the same way crop factor works in Impact Pack.
+
+    crop size = mask bounding box size * cropfactor
+    padding per side = longer bbox side * (cropfactor - 1) / 2
+    The result is never lower than minpadding.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "mask": ("MASK",),
+                "cropfactor": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 10.0, "step": 0.05}),
+                "minpadding": ("INT", {"default": 32, "min": 0, "max": 4096, "step": 1}),
+            }
+        }
+
+    RETURN_TYPES = ("INT",)
+    RETURN_NAMES = ("padding",)
+    FUNCTION = "calc"
+    CATEGORY = "Farrenzo's Garbage/Image/Utils"
+
+    def calc(self, mask, cropfactor, minpadding):
+        m = mask
+        if m.dim() == 2:
+            m = m.unsqueeze(0)
+        # union of all masks in the batch
+        union = m.amax(dim=0)
+        ys, xs = torch.where(union > 0)
+        if ys.numel() == 0:
+            return (int(minpadding),)
+        bh = int(ys.max() - ys.min() + 1)
+        bw = int(xs.max() - xs.min() + 1)
+        side = max(bw, bh)
+        pad = int(round(side * (float(cropfactor) - 1.0) / 2.0))
+        return (max(pad, int(minpadding)),)
+
+
+class FG_MaskFromRGBCMYBW:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "image": ("IMAGE", ),
+                "threshold_r": ("FLOAT", { "default": 0.15, "min": 0.0, "max": 1, "step": 0.01, }),
+                "threshold_g": ("FLOAT", { "default": 0.15, "min": 0.0, "max": 1, "step": 0.01, }),
+                "threshold_b": ("FLOAT", { "default": 0.15, "min": 0.0, "max": 1, "step": 0.01, }),
+            }
+        }
+
+    RETURN_TYPES = ("MASK","MASK","MASK","MASK","MASK","MASK","MASK","MASK",)
+    RETURN_NAMES = ("red","green","blue","cyan","magenta","yellow","black","white",)
+    FUNCTION = "run_me"
+    CATEGORY = "Farrenzo's Garbage/Image/Utils"
+
+    def run_me(self, image, threshold_r, threshold_g, threshold_b):
+        red = ((image[..., 0] >= 1-threshold_r) & (image[..., 1] < threshold_g) & (image[..., 2] < threshold_b)).float()
+        green = ((image[..., 0] < threshold_r) & (image[..., 1] >= 1-threshold_g) & (image[..., 2] < threshold_b)).float()
+        blue = ((image[..., 0] < threshold_r) & (image[..., 1] < threshold_g) & (image[..., 2] >= 1-threshold_b)).float()
+
+        cyan = ((image[..., 0] < threshold_r) & (image[..., 1] >= 1-threshold_g) & (image[..., 2] >= 1-threshold_b)).float()
+        magenta = ((image[..., 0] >= 1-threshold_r) & (image[..., 1] < threshold_g) & (image[..., 2] > 1-threshold_b)).float()
+        yellow = ((image[..., 0] >= 1-threshold_r) & (image[..., 1] >= 1-threshold_g) & (image[..., 2] < threshold_b)).float()
+
+        black = ((image[..., 0] <= threshold_r) & (image[..., 1] <= threshold_g) & (image[..., 2] <= threshold_b)).float()
+        white = ((image[..., 0] >= 1-threshold_r) & (image[..., 1] >= 1-threshold_g) & (image[..., 2] >= 1-threshold_b)).float()
+        
+        return (red, green, blue, cyan, magenta, yellow, black, white,)
+
+
 """
 ┌─────────────────────────────────────┐
 │          Auto Crop n' Clip          │
@@ -457,7 +529,7 @@ class FG_AutoCropnClip:
     RETURN_TYPES = ("STITCHER", "IMAGE", "MASK")
     RETURN_NAMES = ("stitcher", "cropped_image", "cropped_mask")
     FUNCTION = "crop_me"
-    CATEGORY = "Farrenzo's Garbage/Image"
+    CATEGORY = "Farrenzo's Garbage/Image/Utils"
     DESCRIPTION = "Crops an image around a mask for inpainting."
 
     def crop_me(
@@ -576,7 +648,7 @@ class FG_AutoCropnClipReStitcher:
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("Image",)
     FUNCTION = "inpaint_stitch"
-    CATEGORY = "Farrenzo's Garbage/Image"
+    CATEGORY = "Farrenzo's Garbage/Image/Utils"
     DESCRIPTION = "Stitches an image cropped with Auto Crop n' Clip back into the original image."
 
     @staticmethod
@@ -630,6 +702,8 @@ class FG_AutoCropnClipReStitcher:
 
 MASK_UTILS_NODE_CLASS_MAPPINGS = {
     "FG_MaskBackdrop"            : FG_MaskBackdrop,
+    "FG_MaskFromRGBCMYBW+"       : FG_MaskFromRGBCMYBW,
+    "FG_CropFactorPadding"       : FG_CropFactorPadding,
     "FG_BoxFillwCoordinates"     : FG_CoordinatesBoxFill,
 
     "FG_AutoCropnClip"           : FG_AutoCropnClip,
@@ -637,6 +711,8 @@ MASK_UTILS_NODE_CLASS_MAPPINGS = {
 }
 MASK_UTILS_NODE_DISPLAY_NAME_MAPPINGS = {
     "FG_MaskBackdrop"           : "⚙️ Mask Backdrop",
+    "FG_CropFactorPadding"      : "🗑️ Crop Factor Padding",
+    "FG_MaskFromRGBCMYBW+"      : "🔧 Mask From RGB/CMY/BW",
     "FG_BoxFillwCoordinates"    : "🗑️ Coordinate Box Fill",
     "FG_AutoCropnClip"          : "✂️ Auto Crop & Clip",
     "FG_AutoCropnClipReStitcher": "🪡 Auto Crop & Clip ReStitcher",

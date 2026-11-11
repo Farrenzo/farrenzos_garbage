@@ -640,8 +640,14 @@ def encode_auto(vae, pixels, tile_size=AUTO, overlap=AUTO,
                             tile_t=t_size, overlap_t=t_overlap), size
 
 
-def decode_auto(vae, latent, tile_size=AUTO, overlap=AUTO,
-                temporal_size=AUTO, temporal_overlap=AUTO):
+def decode_auto(
+    vae,
+    latent,
+    tile_size=AUTO,
+    overlap=AUTO,
+    temporal_size=AUTO,
+    temporal_overlap=AUTO
+):
     """Decode a latent to pixels, tiling only if it won't fit.
     Returns (image_tensor, tile_px), tile_px 0 when untiled.
     """
@@ -681,7 +687,6 @@ def decode_auto(vae, latent, tile_size=AUTO, overlap=AUTO,
         tile_t    = tt,
         overlap_t = to
     ), size
-
 
 
 def get_dict_value(data: dict, dict_key: str, default=None):
