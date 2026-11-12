@@ -6,9 +6,9 @@ Saves images with clean filenames and format options.
 Features:
 - Single image: no counter suffix
 - Batch images: 3-digit counter (000-999)
-- Format choice: PNG (default) or WebP
+- Format choice: PNG (default), JPG or WebP
 - Optional metadata embedding
-- WebP options: lossless, quality, method
+- Options: quality_optimized (WebP lossless / JPG optimize), quality, WebP method
 
 ┌─────────────────────────────────────┐
 │ Save Image                          │
@@ -17,11 +17,11 @@ Features:
 │ <→ TEXT INPUT_File Name>            │
 │ - Auto Populated to %HMSf%          │
 │                                     │
-│ <▼ FORMAT> PNG / WEBP               │
+│ <▼ FORMAT> PNG / JPG / WEBP         │
 │ <BOOL _ embed_metadata>             │
 │                                     │
-│ ── WebP Options ──                  │
-│ <BOOL _ lossless>                   │
+│ ── JPG / WebP Options ──            │
+│ <BOOL _ quality_optimized>          │
 │ <INT  _ quality>                    │
 │ <INT  _ method>                     │
 └─────────────────────────────────────┘
@@ -34,7 +34,7 @@ from PIL.PngImagePlugin import PngInfo
 
 import folder_paths
 from comfy.cli_args import args
-from ._fg_helperfunctions import avoid_naming_collisions, get_output_path
+from ._fg_helperfunctions import avoid_naming_collisions, get_output_path, log
 
 
 class FG_SaveImage:
@@ -42,10 +42,10 @@ class FG_SaveImage:
     SaveImage variant with cleaner filenames and format options.
     - Single image: no counter suffix
     - Batch images: 3-digit counter (000-999)
-    - Supports PNG and WebP formats
+    - Supports PNG, JPG and WebP formats
     """
     
-    FORMATS = ["png", "webp"]
+    FORMATS = ["png", "jpg", "webp"]
     WEBP_METHODS = ["default", "0", "1", "2", "3", "4", "5", "6"]
     
     def __init__(self):
@@ -65,7 +65,7 @@ class FG_SaveImage:
                 }),
                 "format": (s.FORMATS, {
                     "default": "png",
-                    "tooltip": "Image format: PNG (lossless, larger) or WebP (configurable compression)."
+                    "tooltip": "Image format: PNG (lossless, larger), JPG (lossy, no transparency) or WebP (configurable compression)."
                 }),
                 "embed_metadata": ("BOOLEAN", {
                     "default": True, 
@@ -73,17 +73,17 @@ class FG_SaveImage:
                 }),
             },
             "optional": {
-                # WebP-specific options (ignored for PNG)
-                "webp_lossless": ("BOOLEAN", {
+                # JPG / WebP options (ignored for PNG)
+                "quality_optimized": ("BOOLEAN", {
                     "default": True,
-                    "tooltip": "WebP only: Use lossless compression. If False, uses lossy compression controlled by quality."
+                    "tooltip": "WebP: lossless compression. JPG: optimized Huffman tables and 4:4:4 chroma (no subsampling)."
                 }),
-                "webp_quality": ("INT", {
+                "quality": ("INT", {
                     "default": 100,
                     "min": 1,
                     "max": 100,
                     "step": 1,
-                    "tooltip": "WebP only: Quality for lossy compression (1-100). Ignored if lossless=True."
+                    "tooltip": "JPG / WebP: Quality for lossy compression (1-100). Ignored for WebP when quality_optimized=True."
                 }),
                 "webp_method": (s.WEBP_METHODS, {
                     "default": "default",
@@ -100,7 +100,7 @@ class FG_SaveImage:
     FUNCTION = "save_images"
     OUTPUT_NODE = True
     CATEGORY = "Farrenzo's Garbage/Image"
-    DESCRIPTION = "Saves images with clean filenames. Supports PNG and WebP formats with metadata embedding."
+    DESCRIPTION = "Saves images with clean filenames. Supports PNG, JPG and WebP formats with metadata embedding."
     COLOR = "#332922"
     BGCOLOR = "#593930"
 
@@ -110,8 +110,8 @@ class FG_SaveImage:
         filename_prefix="%HMSf%",
         format="png",
         embed_metadata=True,
-        webp_lossless: bool = True,
-        webp_quality=100,
+        quality_optimized: bool = True,
+        quality=100,
         webp_method="default",
         prompt=None, 
         extra_pnginfo=None
@@ -142,18 +142,36 @@ class FG_SaveImage:
             
             # Save based on format
             if format == "png":
-                self._save_png(img, filepath, embed_metadata, prompt, extra_pnginfo)
-            else:  # webp
+                self._save_png(
+                    img, 
+                    filepath,
+                    embed_metadata,
+                    prompt,
+                    extra_pnginfo
+                )
+            elif format == "jpg":
+                self._save_jpg(
+                    img, 
+                    filepath, 
+                    embed_metadata, 
+                    prompt, 
+                    extra_pnginfo, 
+                    quality_optimized, 
+                    quality
+                )
+            elif format == "webp":
                 self._save_webp(
                     img,
                     filepath,
                     embed_metadata,
                     prompt,
                     extra_pnginfo,
-                    webp_lossless,
-                    webp_quality,
+                    quality_optimized,
+                    quality,
                     webp_method
                 )
+            else:
+                raise ValueError(f"{format} is not supported.")
             
             results.append({
                 "filename": file,
@@ -181,6 +199,30 @@ class FG_SaveImage:
         
         img.save(filepath, pnginfo=metadata, compress_level=self.compress_level)
     
+    def _save_jpg(self, img: PILImage, filepath: str, embed_metadata, prompt, extra_pnginfo, optimized, quality):
+        """Save image as JPG with optional EXIF metadata. Alpha is flattened onto white."""
+        if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+            rgba = img.convert("RGBA")
+            img = PILImage.new("RGB", rgba.size, (255, 255, 255))
+            img.paste(rgba, mask=rgba.getchannel("A"))
+        elif img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+
+        save_kwargs = {"quality": quality}
+        if optimized:
+            save_kwargs["optimize"] = True
+            save_kwargs["subsampling"] = 0
+
+        if embed_metadata and not args.disable_metadata:
+            exif = self._create_exif(img, prompt, extra_pnginfo)
+            # JPEG stores EXIF in a single APP1 segment capped at 64KB.
+            if exif and len(exif.tobytes()) > 65533:
+                log("Workflow metadata exceeds the 64KB JPG EXIF limit, saving without metadata.", "warning")
+            elif exif:
+                save_kwargs["exif"] = exif
+
+        img.save(filepath, format="JPEG", **save_kwargs)
+
     def _save_webp(
         self,
         img: PILImage,
@@ -204,17 +246,17 @@ class FG_SaveImage:
         
         # Build EXIF metadata for WebP
         if embed_metadata and not args.disable_metadata:
-            exif = self._create_webp_exif(img, prompt, extra_pnginfo)
+            exif = self._create_exif(img, prompt, extra_pnginfo)
             if exif:
                 save_kwargs["exif"] = exif
         
         img.save(filepath, **save_kwargs)
     
-    def _create_webp_exif(self, img, prompt, extra_pnginfo):
+    def _create_exif(self, img, prompt, extra_pnginfo):
         """
-        Create EXIF metadata for WebP images.
+        Create EXIF metadata for WebP and JPG images.
         
-        WebP supports EXIF but not arbitrary text chunks like PNG.
+        WebP and JPG support EXIF but not arbitrary text chunks like PNG.
         We encode workflow data into EXIF fields:
         - 0x0110 (Model): prompt data
         - 0x010F (Make) and below: extra_pnginfo entries
@@ -235,6 +277,3 @@ class FG_SaveImage:
                     break
         
         return exif_data if exif_data else None
-    
-
-

@@ -397,19 +397,19 @@
 			},
 			"format":{
 				"name":"🗂️ File Format",
-				"tooltip": "Image format: PNG (lossless, larger) or WebP (configurable compression)."
+				"tooltip": "Image format: PNG (lossless, larger), JPG (lossy, no transparency) or WebP (configurable compression)."
 			},
 			"embed_metadata":{
 				"name":"🪪 Embed Metadata",
 				"tooltip": "Embed ComfyUI workflow and generation metadata in the image."
 			},
-			"webp_lossless":{
-				"name":"💥 WebP Lossless",
-				"tooltip": "For WebP only: Use lossless compression. If False, uses lossy compression controlled by quality."
+			"quality_optimized":{
+				"name":"💥 Quality Optimized",
+				"tooltip": "WebP: lossless compression. JPG: optimized Huffman tables and 4:4:4 chroma (no subsampling)."
 			},
-			"webp_quality":{
-				"name":"🥔 WebP Quality",
-				"tooltip": "WebP only: Quality for lossy compression (1-100). Ignored if lossless=True."
+			"quality":{
+				"name":"🥔 Quality",
+				"tooltip": "JPG / WebP: Quality for lossy compression (1-100). Ignored for WebP when Quality Optimized is on."
 			},
 			"webp_method":{
 				"name":"🈷️ WebP Method",
