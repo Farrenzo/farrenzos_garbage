@@ -4,8 +4,94 @@ Some custom ComfyUI nodes. These include:
 
 1. A better save image node. Names files with UTC. Best used if you organize your images by folder
 2. A LoRA loader node that you simply stack them one after another.
-3. An image tagger that incorporates both booru style and natural language descriptor.
-4. Better CLIP Text Encode for positive and negative and image prompt conditioning.
+3. An image tagger.
+4. Better CLIP Text Encode for positive, negative & image prompt conditioning.
+
+Complete list below. The **gear** (⚙️) icone means experimental. The rest are not only ready to use but can be used immediately.
+
+```
+    🗑️ Advanced KSampler
+    🗑️ Apply Advanced ControlNet
+    🗑️ Advanced Edge Detector
+    🗑️ Enhanced CLIP Text Encode
+    🗑️ Combined Image Tagger
+    🗑️ Multi-LoRA Loader
+    🗑️ Advanced Empty Latent
+    🗑️ Image Scaler
+    🗑️ KSampler for Qwen Image Edit
+    🗑️ LAB Color Transfer
+    🗑️ Latent Transfer (VAE to VAE)
+    🗑️ Load Image
+    🗑️ MiniMax H3 Conditioner
+    🗑️ Edit Model Reference Method
+    🗑️ Purge Memory
+    🗑️ Anima Role Reference KV Patch
+    🗑️ Save Image
+    🗑️ Save Video
+    🗑️ Send Telegram Notification
+    🗑️ Show Text
+    🗑️ Unified Models Loader
+    🗑️ WD14 Tagger (Booru Tags)
+    🗑️ Resource Manager
+    🗑️ XPU Guard (Device Health)
+    🗑️ YuE2 XPU Accelerator
+    🗑️ MiniMaxMusicH3 XPU Accelerator
+    🗑️ Step Inspect (x0 trajectory)
+    ⚙️ Anima Apply ControlNet-LLLite
+    🗑️ Anima IP-Adapter Apply
+    🗑️ Anima IP-Adapter Loader
+    🗑️ Anima IP Adapter Visualizer
+    🗑️ Anima SigLIP2 Encode Image
+    ⚙️ LLLite Cond Preview
+    🗑️ Anima Regional Prompt
+    🗑️ Anima Apply Cosmos Reference Latent
+    🗑️ Krea2 Edit Model Patch
+    🎛️ Krea 2 Conditioning Control
+    ⚙️ Mask Backdrop
+    🗑️ Crop Factor Padding
+    🔧 Mask From RGB/CMY/BW
+    🗑️ Coordinate Box Fill
+    ✂️ Auto Crop & Clip
+    🪡 Auto Crop & Clip ReStitcher
+    🎲 Noisy Seeder
+    🎲 Seed Variance Enhancer
+    🗑️ Color Blender
+    🗑️ Hue Correct (LAB)
+    🗑️ Image Forensics
+    🗑️ Color Picker
+    🗑️ Linework Composite
+    🗑️ Color Map (for Bubble Tint)
+    🗑️ Bubble Tint (colour lettering)
+    ⚙️ H3 Auto Chain Motion Context
+    ⚙️ H3 Auto Chain Motion Context Trim
+    ⚙️ H3 Auto Chain Save Latent
+    ⚙️ H3 Auto Chain Load Latent
+    ⚙️ H3 Auto Chain Audio
+    ⚙️ H3 Auto Chain + Stitch
+    ⚙️ H3 Auto Chain Frame Reference
+    ⚙️ Conditioning Debug
+    ⚙️ Conditioning Upscale
+    ⚙️ Conditioning Stretch
+    ⚙️ Multi Latent Composite
+    ⚙️ Multi Area Conditioning
+    ⚙️ SCAIL-2 Easy Config
+    ⚙️ SCAIL-2 Auto Video (loop)
+    ⚙️ SCAIL-2 Run Info
+    🗑️ Save Conditioning / Latent To Disk
+    🗑️ Load Conditioning / Latent From Disk
+    🗑️ Any Switcher
+    🗑️ Int / Float Out
+    🗑️ Minimum + Maximum
+    ⚙️ Viggle Remake Noise
+    ⚙️ Viggle Remake Conditioning
+    ⚙️ Viggle Remake Keyframe Until
+    🎨 Inpaint Canvas
+    🎨 Inpaint Canvas Stitch
+    🎨 Inpaint Canvas Load Ref
+    🎨 Inpaint Canvas Mask Out
+    🎨 Inpaint Canvas Object Map
+    🎨 Inpaint Canvas Text Out
+```
 
 Folder structure:
 ---
