@@ -25,7 +25,7 @@
 	},
 	"FG_CLIPTextEncode":{
 		"display_name": "🗑️ Enhanced CLIP Text Encode",
-		"description": "Enhanced CLIP Text Encoder. Encodes text prompts using a CLIP model into an embedding that can be used to guide the diffusion model towards generating specific images.\n\nMany SDXL models will use a negative prompt. However, newer models appear to have better (not perfect) prompt adherence. Hence a negative prompt is not always required.",
+		"description": "An enhanced CLIP Text Encoder. Encodes text prompts using a CLIP model into an embedding used to guide the diffusion model.\n\nMany SDXL models will use a negative prompt. However, newer models appear to have better (not perfect) prompt adherence. Hence a negative prompt is not always required. In addition, if your CFG is 1, likely a negative prompt will be ignored if supplied. So turning off negative prompt will zero out the negative prompt entry.",
 		"inputs": {
 			"clip": {
 				"name": "📒 Clip",

@@ -8,23 +8,18 @@ import comfy.sample as c_sample
 
 from ._fg_helperfunctions import log, get_worflow_node
 
-# Some extension must be setting a seed as server-generated seeds were not random. We'll set a new
-# seed and use that state going forward.
-initial_random_state = random.getstate()
-random.seed(datetime.now().timestamp())
-rgthree_seed_random_state = random.getstate()
-random.setstate(initial_random_state)
+# Other extensions may seed the global `random` module, so server-generated seeds use their own
+# generator, seeded from OS entropy.
+_seed_rng = random.Random()
 
 
 def new_random_seed():
-	""" Gets a new random seed from the rgthree_seed_random_state and resetting the previous state."""
-	global rgthree_seed_random_state
-	prev_random_state = random.getstate()
-	random.setstate(rgthree_seed_random_state)
-	seed = random.randint(1, 1125899906842624)
-	rgthree_seed_random_state = random.getstate()
-	random.setstate(prev_random_state)
-	return seed
+	"""Today's month and day followed by six random digits, e.g. 1112042317.
+
+	CPU noise (torch.manual_seed) only uses the low 32 bits of the seed, so seeds stay below
+	2**32 - 1. MMDD + 6 digits tops out at 1231999999."""
+	now = datetime.now()
+	return int(f"{now.month}{now.day:02d}{_seed_rng.randint(0, 999999):06d}")
 
 
 class FG_Noise:
@@ -63,7 +58,10 @@ class FG_NoisySeeder:
 	def INPUT_TYPES(cls):  # pylint: disable = invalid-name, missing-function-docstring
 		return {
 		"required": {
-			"seed": ("INT", {"default": 0, "min": -1125899906842624, "max": 1125899906842624}),
+			"seed": ("INT", {"default": 0, "min": -3, "max": 0xffffffff, "tooltip": (
+				"Max 4,294,967,295. Noise only uses the lowest 32 bits of the seed, so anything higher "
+				"would wrap around and repeat a smaller seed. -1 = random each run, -2 / -3 = last seed +1 / -1."
+			)}),
 		},
 		"hidden": {
 				"prompt": "PROMPT",
@@ -102,60 +100,60 @@ class FG_NoisySeeder:
 				f"{self.NODE_NAME}: Got '{seed}' as passed seed. This shouldn't happen when queueing from the ComfyUI frontend.",
 				message_type="warning"
 			)
-		if seed in (-2, -3):
-			log(
-				f"{self.NODE_NAME}: Got '{seed}' as passed seed. Cannot {'increment' if seed == -2 else 'decrement'} seed from server, but will generate a new random seed.",
-    			message_type="warning"
-			)
-		original_seed = seed
-		seed = new_random_seed()
-		log(
-			f"{self.NODE_NAME}: Server-generated random seed '{seed}' and saving to workflow.",
-			message_type="info"
-		)
-		log(
-			f"{self.NODE_NAME} NOTE: Re-queues passing in '{seed}' and server-generated random seed won't be cached.",
-			message_type="warning"
-		)
-
-		if unique_id is None:
-			log(
-			    f"{self.NODE_NAME} Cannot save server-generated seed to image metadata because the node\'s id was not provided.",
-			    message_type="warning"
-			)
-		else:
-			if extra_pnginfo is None:
+			if seed in (-2, -3):
 				log(
-					f"{self.NODE_NAME} Cannot save server-generated seed to image workflow metadata because workflow was not provided.",
-					message_type="warning"
+					f"{self.NODE_NAME}: Got '{seed}' as passed seed. Cannot {'increment' if seed == -2 else 'decrement'} seed from server, but will generate a new random seed.",
+	    			message_type="warning"
+				)
+			original_seed = seed
+			seed = new_random_seed()
+			log(
+				f"{self.NODE_NAME}: Server-generated random seed '{seed}' and saving to workflow.",
+				message_type="info"
+			)
+			log(
+				f"{self.NODE_NAME} NOTE: Re-queues passing in '{seed}' and server-generated random seed won't be cached.",
+				message_type="warning"
+			)
+
+			if unique_id is None:
+				log(
+				    f"{self.NODE_NAME} Cannot save server-generated seed to image metadata because the node\'s id was not provided.",
+				    message_type="warning"
 				)
 			else:
-				log(f"{self.NODE_NAME} Looking for Seed node with id '{unique_id}'", message_type="info")
-				workflow_node = get_worflow_node(extra_pnginfo, str(unique_id))
-				if workflow_node is None or 'widgets_values' not in workflow_node:
+				if extra_pnginfo is None:
 					log(
-						f"{self.NODE_NAME} Cannot save server-generated seed to image workflow metadata because node was not found in the provided workflow.",
-					    message_type="warning"
+						f"{self.NODE_NAME} Cannot save server-generated seed to image workflow metadata because workflow was not provided.",
+						message_type="warning"
 					)
 				else:
-					for index, widget_value in enumerate(workflow_node['widgets_values']):
-						if widget_value == original_seed:
-							workflow_node['widgets_values'][index] = seed
+					log(f"{self.NODE_NAME} Looking for Seed node with id '{unique_id}'", message_type="info")
+					workflow_node = get_worflow_node(extra_pnginfo, str(unique_id))
+					if workflow_node is None or 'widgets_values' not in workflow_node:
+						log(
+							f"{self.NODE_NAME} Cannot save server-generated seed to image workflow metadata because node was not found in the provided workflow.",
+						    message_type="warning"
+						)
+					else:
+						for index, widget_value in enumerate(workflow_node['widgets_values']):
+							if widget_value == original_seed:
+								workflow_node['widgets_values'][index] = seed
 
-			if prompt is None:
-				log(
-					f"{self.NODE_NAME} Cannot save server-generated seed to image API prompt metadata because prompt was not provided.",
-					message_type="warning"
-				)
-			else:
-				prompt_node = prompt.get(str(unique_id))
-				if prompt_node is None or 'inputs' not in prompt_node or 'seed' not in prompt_node['inputs']:
+				if prompt is None:
 					log(
-						f"{self.NODE_NAME} Cannot save server-generated seed to image workflow metadata because node was not found in the provided workflow.",
-					    message_type="warning"
+						f"{self.NODE_NAME} Cannot save server-generated seed to image API prompt metadata because prompt was not provided.",
+						message_type="warning"
 					)
 				else:
-					prompt_node['inputs']['seed'] = seed
+					prompt_node = prompt.get(str(unique_id))
+					if prompt_node is None or 'inputs' not in prompt_node or 'seed' not in prompt_node['inputs']:
+						log(
+							f"{self.NODE_NAME} Cannot save server-generated seed to image workflow metadata because node was not found in the provided workflow.",
+						    message_type="warning"
+						)
+					else:
+						prompt_node['inputs']['seed'] = seed
 
 		return (seed, FG_Noise(seed), )
 

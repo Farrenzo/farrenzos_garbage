@@ -126,14 +126,20 @@ class FG_SaveImage:
         batch_size = len(images)
         results = []
         ext = f".{format}"
-        
+
+        # Pick one base for the whole batch so no _000.._NNN file overwrites an existing one.
+        if batch_size > 1:
+            base, n = filename_base, 0
+            while any(os.path.exists(os.path.join(full_output_folder, f"{filename_base}_{i:03d}{ext}")) for i in range(batch_size)):
+                n += 1
+                filename_base = f"{base}_{n:02d}"
+
         for batch_number, image in enumerate(images):
             # Convert tensor to PIL Image
             img = self._tensor_to_pil(image)
-            
+
             # Determine filename
             if batch_size == 1:
-                file = f"{filename_base}{ext}"
                 file = avoid_naming_collisions(full_output_folder, filename_base, ext)
             else:
                 file = f"{filename_base}_{batch_number:03d}{ext}"

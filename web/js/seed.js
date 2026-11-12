@@ -8,19 +8,17 @@ const SPECIAL_SEED_INCREMENT = -2;
 const SPECIAL_SEED_DECREMENT = -3;
 const SPECIAL_SEEDS = [SPECIAL_SEED_RANDOM, SPECIAL_SEED_INCREMENT, SPECIAL_SEED_DECREMENT];
 
-// Matches the range new_random_seed() uses on the python side.
-const RANDOM_MIN = 1;
-const RANDOM_MAX = 1125899906842624;
-
 const LAST_SEED_BUTTON_LABEL = "♻️ (Use Last Queued Seed)";
 
 // Live instances, so the queue hook can find them without walking the graph
 // (nodes inside subgraphs aren't in app.graph._nodes).
 const SEEDER_NODES = new Set();
 
-/** A fresh seed inside the range the python node uses. */
+/** Today's month and day followed by six random digits, same as new_random_seed() in python. */
 function generateRandomSeed() {
-    return Math.floor(Math.random() * (RANDOM_MAX - RANDOM_MIN + 1)) + RANDOM_MIN;
+    const now = new Date();
+    const suffix = Math.floor(Math.random() * 1000000);
+    return Number(`${now.getMonth() + 1}${String(now.getDate()).padStart(2, "0")}${String(suffix).padStart(6, "0")}`);
 }
 
 /** Resolves -1 / -2 / -3 into a concrete seed. Anything else passes straight through. */

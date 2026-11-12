@@ -7,13 +7,16 @@ import node_helpers
 from comfy.comfy_types import IO, ComfyNodeABC, InputTypeDict
 
 global_description = """
-Enhanced CLIP Text Encoder. Encodes text prompts using
-a CLIP model into an embedding that can be used to guide
-the diffusion model towards generating specific images.
+An enhanced CLIP Text Encoder. Encodes text prompts using
+a CLIP model into an embedding used to guide the diffusion
+model. 
 
 Many SDXL models will use a negative prompt. However, newer
 models appear to have better (not perfect) prompt adherence.
-Hence a negative prompt is not always required.
+Hence a negative prompt is not always required. In addition,
+if your CFG is 1, likely a negative prompt will be ignored if
+supplied. So turning off negative prompt will zero out the
+negative prompt entry. Neat huh?
 """
 global_instruction_content = (
     "Describe the key features of the input image (color, shape, "
