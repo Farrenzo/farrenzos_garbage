@@ -348,6 +348,9 @@ class FG_AnimaRegionalPrompt:
                 ),
                 "json_prompt": ("STRING", {"multiline": True, "default": DEFAULT_JSON_PROMPT}),
             },
+            "optional": {
+                "use_builder": ("BOOLEAN", {"tooltip": "Use built in prompt builder"})
+            },
         }
 
     RETURN_TYPES = ("MODEL", "CONDITIONING", "CONDITIONING",)
@@ -369,6 +372,7 @@ class FG_AnimaRegionalPrompt:
         cross_inject_every_n_blocks,
         self_inject_every_n_blocks,
         json_prompt,
+        use_builder=False,
     ):
         _validate_anima_model(model)
         data = json.loads(json_prompt)
