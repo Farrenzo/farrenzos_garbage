@@ -10,15 +10,12 @@ ComfyUI creates the starting noise on the CPU, and PyTorch only uses the lowest 
 
 Neighbouring seeds are unrelated: seed 1000 and seed 1001 give completely different noise.
 
-## Special values
+## Seed values
 
-| Seed | Behaviour |
-|------|-----------|
-| `-1` | New random seed every run |
-| `-2` | Last queued seed + 1 |
-| `-3` | Last queued seed − 1 |
+- **`-1`**: new random seed every run.
+- **Anything else**: used exactly as entered.
 
-`-2` and `-3` fall back to a random seed when nothing has been queued yet.
+To step through nearby seeds, click **♻️ Use Last Queued Seed**, then the **<** | **>** arrows on the seed widget.
 
 The seed that was actually used is written into the image metadata, so a saved image always reloads with a real seed.
 

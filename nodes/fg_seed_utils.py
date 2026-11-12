@@ -58,9 +58,9 @@ class FG_NoisySeeder:
 	def INPUT_TYPES(cls):  # pylint: disable = invalid-name, missing-function-docstring
 		return {
 		"required": {
-			"seed": ("INT", {"default": 0, "min": -3, "max": 0xffffffff, "tooltip": (
-				"Max 4,294,967,295. Noise only uses the lowest 32 bits of the seed, so anything higher "
-				"would wrap around and repeat a smaller seed. -1 = random each run, -2 / -3 = last seed +1 / -1."
+			"seed": ("INT", {"default": 0, "min": -1, "max": 0xffffffff, "tooltip": (
+				"-1 = new random seed every run. Any other value is used as is. Max 4,294,967,295: noise only "
+				"uses the lowest 32 bits of the seed, so anything higher would wrap around and repeat a smaller seed."
 			)}),
 		},
 		"hidden": {
@@ -82,8 +82,8 @@ class FG_NoisySeeder:
 
 	@classmethod
 	def IS_CHANGED(cls, seed, prompt=None, extra_pnginfo=None, unique_id=None):
-		"""Forces a changed state if we happen to get a special seed, as if from the API directly."""
-		if seed in (-1, -2, -3):
+		"""Forces a changed state for -1, as if from the API directly."""
+		if seed == -1:
 		# This isn't used, but a different value than previous will force it to be "changed"
 			return new_random_seed()
 		return seed
@@ -94,17 +94,11 @@ class FG_NoisySeeder:
 		# We generate random seeds on the frontend in the seed node before sending the workflow in for
 		# many reasons. However, if we want to use this in an API call without changing the seed before
 		# sending, then users _could_ pass in "-1" and get a random seed used and added to the metadata.
-		# Though, this should likely be discouraged for several reasons (thus, a lot of logging).
-		if seed in (-1, -2, -3):
+		if seed == -1:
 			log(
 				f"{self.NODE_NAME}: Got '{seed}' as passed seed. This shouldn't happen when queueing from the ComfyUI frontend.",
 				message_type="warning"
 			)
-			if seed in (-2, -3):
-				log(
-					f"{self.NODE_NAME}: Got '{seed}' as passed seed. Cannot {'increment' if seed == -2 else 'decrement'} seed from server, but will generate a new random seed.",
-	    			message_type="warning"
-				)
 			original_seed = seed
 			seed = new_random_seed()
 			log(

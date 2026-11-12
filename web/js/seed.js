@@ -4,9 +4,6 @@ const { api } = window.comfyAPI.api;
 const NODE_TYPE = "FG_NoisySeeder";
 
 const SPECIAL_SEED_RANDOM = -1;
-const SPECIAL_SEED_INCREMENT = -2;
-const SPECIAL_SEED_DECREMENT = -3;
-const SPECIAL_SEEDS = [SPECIAL_SEED_RANDOM, SPECIAL_SEED_INCREMENT, SPECIAL_SEED_DECREMENT];
 
 const LAST_SEED_BUTTON_LABEL = "♻️ (Use Last Queued Seed)";
 
@@ -21,17 +18,10 @@ function generateRandomSeed() {
     return Number(`${now.getMonth() + 1}${String(now.getDate()).padStart(2, "0")}${String(suffix).padStart(6, "0")}`);
 }
 
-/** Resolves -1 / -2 / -3 into a concrete seed. Anything else passes straight through. */
+/** -1 becomes a new random seed. Anything else passes straight through. */
 function getSeedToUse(node) {
     const inputSeed = Number(node.seedWidget.value);
-    if (!SPECIAL_SEEDS.includes(inputSeed)) return inputSeed;
-
-    const last = node.lastSeed;
-    if (typeof last === "number" && !SPECIAL_SEEDS.includes(last)) {
-        if (inputSeed === SPECIAL_SEED_INCREMENT) return last + 1;
-        if (inputSeed === SPECIAL_SEED_DECREMENT) return last - 1;
-    }
-    return generateRandomSeed();
+    return inputSeed === SPECIAL_SEED_RANDOM ? generateRandomSeed() : inputSeed;
 }
 
 /** Prompt keys are "5" at the top level and "12:5" for a node inside a subgraph. */
@@ -42,7 +32,7 @@ function findApiNodeId(output, nodeId) {
 }
 
 /**
- * Swaps the special seed for a real one in the prompt and the serialized workflow,
+ * Swaps -1 for a real seed in the prompt and the serialized workflow,
  * after graphToPrompt() has run but before either is sent to the server. The widget
  * on the canvas is left alone, so "-1" stays "-1" while the metadata records the
  * seed that was actually used.
@@ -95,7 +85,7 @@ app.registerExtension({
             this.lastSeed = undefined;
 
             // Grab the seed widget and drop comfy's control_after_generate —
-            // the special seeds below replace it.
+            // -1 and the buttons below replace it.
             for (let i = this.widgets.length - 1; i >= 0; i--) {
                 const w = this.widgets[i];
                 if (w.name === "seed") {
