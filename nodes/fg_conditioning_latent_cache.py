@@ -70,13 +70,13 @@ class FG_SaveConditioningLatent:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "positive_conditioning": ("CONDITIONING",),
                 "filename_prefix": ("STRING", {"default": "cond_cache_%HMSf%"}),
                 "force_unload_after_save": ("BOOLEAN", {"default": True}),
             },
             "optional": {
-                "negative_conditioning": ("CONDITIONING",),
-                "latent": ("LATENT",),
+                "positive_conditioning": ("CONDITIONING", {"tooltip": "Positive Conditioning."}),
+                "negative_conditioning": ("CONDITIONING", {"tooltip": "Negative Conditioning."}),
+                "latent": ("LATENT", {"tooltip": "The latent."}),
             }
         }
 
@@ -87,7 +87,12 @@ class FG_SaveConditioningLatent:
     DESCRIPTION = save_description
     OUTPUT_NODE = True
 
-    def save(self, positive_conditioning, filename_prefix, force_unload_after_save, negative_conditioning=None, latent=None):
+    def save(self, filename_prefix, force_unload_after_save, positive_conditioning=None, negative_conditioning=None, latent=None):
+        # pass through if nothing is passed in.
+        if not positive_conditioning and not negative_conditioning and not latent:
+            log(f"💾 {self.NODE_NAME} is skipped")
+            return(positive_conditioning, negative_conditioning, latent)
+
         full_folder, filename_base, _ = get_output_path(
             node_name="FG_SaveConditioningLatent",
             filename_prefix=filename_prefix,
@@ -95,12 +100,13 @@ class FG_SaveConditioningLatent:
         )
         path = os.path.join(full_folder, f"{filename_base}.pt")
 
-        payload = {
-            "positive_conditioning": _conditioning_to_cpu(positive_conditioning),
-            "negative_conditioning": _conditioning_to_cpu(negative_conditioning) if negative_conditioning else [],
-            "latent": _latent_to_cpu(latent) if latent else {"samples": None},
-        }
-        print(type(payload["positive_conditioning"]))
+        payload = {}
+        if positive_conditioning:
+            payload["positive_conditioning"] = _conditioning_to_cpu(positive_conditioning)
+        if negative_conditioning:
+            payload["negative_conditioning"] = _conditioning_to_cpu(negative_conditioning)
+        if latent:
+            payload["latent"] = _latent_to_cpu(latent)
 
         torch.save(payload, path)
         log(f"💾 {self.NODE_NAME} and/or Latent To Disk -> {path}", message_type="finish")
@@ -110,7 +116,7 @@ class FG_SaveConditioningLatent:
             # unload that leaves weights resident. See fg_helperfunctions
             # .clear_memory() for why the plain unload_all_models() call
             # alone wasn't enough on this rig.
-            clear_memory(purge_cache=True, purge_models=True, nuclear=True)
+            clear_memory(purge_cache=True, purge_models=True, nuclear=False)
 
         return (positive_conditioning, negative_conditioning, latent)
 
@@ -152,13 +158,18 @@ class FG_LoadConditioningLatent:
                 f"{self.NODE_NAME}: No cached file at {path}. Run FG_SaveConditioningLatent first."
             )
 
+        payload = {
+            "positive_conditioning":None,
+            "negative_conditioning":None,
+            "latent":None,
+        }
         # weights_only=False is required: conditioning metadata dicts can
         # carry non-tensor entries. This is your own locally generated
         # file, not an untrusted download, so this is safe.
-        payload = torch.load(path, map_location="cpu", weights_only=False)
+        unpickle = torch.load(path, map_location="cpu", weights_only=False)
+        payload.update(unpickle)
         log(f"📂 {self.NODE_NAME}: Retrieved conditioning data from pickle <- {path}", message_type="finish")
-
-        return (payload["positive_conditioning"], payload["negative_conditioning"], payload["latent"])
+        return (*payload.values(),)
 
 
 CACHE_NODE_CLASS_MAPPINGS = {

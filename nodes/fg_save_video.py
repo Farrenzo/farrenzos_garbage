@@ -39,6 +39,8 @@ import torch
 import numpy as np
 
 import folder_paths
+import comfy.utils
+from tqdm import tqdm
 from comfy.cli_args import args
 from ._fg_helperfunctions import log, avoid_naming_collisions, get_output_path
 
@@ -195,6 +197,7 @@ class FG_SaveVideo:
         audio_samples, audio_rate = self._prepare_audio(audio)
 
         container = av.open(filepath, mode="w", format="webm")
+        console_bar = None
 
         try:
             if metadata:
@@ -231,6 +234,16 @@ class FG_SaveVideo:
                     "mono" if audio_samples.shape[0] == 1 else "stereo"
                 )
 
+            # One step per frame, plus one for the encoder flush and one for audio.
+            frame_count = int(images.shape[0])
+            total_steps = frame_count + 2
+            progress_bar = comfy.utils.ProgressBar(total_steps)
+            console_bar = tqdm(total=total_steps, desc=f"{self.NODE_NAME} ({codec} webm)", unit="frame")
+
+            def advance_progress():
+                progress_bar.update(1)
+                console_bar.update(1)
+
             for index, frame in enumerate(images):
                 if save_alpha:
                     if has_alpha_channel:
@@ -249,16 +262,22 @@ class FG_SaveVideo:
 
                 for packet in stream.encode(av_frame):
                     container.mux(packet)
+                advance_progress()
 
+            # The encoder holds frames back for lookahead; this drains them.
             for packet in stream.encode():
                 container.mux(packet)
+            advance_progress()
 
             if audio_stream is not None:
                 self._encode_webm_audio(
                     container, audio_stream, audio_samples, audio_rate
                 )
+            advance_progress()
 
         finally:
+            if console_bar is not None:
+                console_bar.close()
             container.close()
 
     def _prepare_audio(self, audio):
@@ -400,5 +419,3 @@ class FG_SaveVideo:
             "ui": {"images": results, "animated": (True,)},
             "result": (video,),
         }
-
-

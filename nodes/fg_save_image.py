@@ -101,8 +101,6 @@ class FG_SaveImage:
     OUTPUT_NODE = True
     CATEGORY = "Farrenzo's Garbage/Image"
     DESCRIPTION = "Saves images with clean filenames. Supports PNG, JPG and WebP formats with metadata embedding."
-    COLOR = "#332922"
-    BGCOLOR = "#593930"
 
     def save_images(
         self, 

@@ -43,6 +43,7 @@ app.registerExtension({
             "FG_PurgeMemory",
             "FG_ResourceManager",
             "FG_AnimaRoleRefKV",
+            "FG_SaveAudio",
             "FG_SaveImage",
             "FG_SaveVideo",
             "FG_SendTelegramNotification",
@@ -53,6 +54,12 @@ app.registerExtension({
             "FG_YuE2XPUAccel",
             "FG_SaveConditioningLatent",
             "FG_LoadConditioningLatent",
+
+            "FG_TTSLoader",
+            "FG_TTSVoice",
+            "FG_TTSSceneTurn",
+            "FG_VoiceLibrary",
+            "FG_TTSSpeak",
 
             "FG_AnimaLLLiteApply",
             "FG_LLLiteCondPreview",
